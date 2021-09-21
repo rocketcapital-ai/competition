@@ -34,6 +34,3 @@ True: runs only `test_competition_state.py` and `test_token_state.py`.
 
 ## Compile All Contracts
 `brownie compile --all`
-
-## Additional Settings
-Further configuration can be made in the file [brownie-config.yaml](https://github.com/rocketcapital-ai/competition/blob/main/brownie-config.yaml).
