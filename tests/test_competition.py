@@ -4,11 +4,15 @@ from brownie import Token, Competition, reverts, accounts
 
 class TestCompetition:
     def setup(self):
+        self.num_rounds = 5
         self.use_multi_admin = False
         self.admin = accounts[0]
         self.participants = accounts[1:]
         self.token = Token.deploy("RockCap Token", "RCP", int(Decimal('100000000e18')), {'from': self.admin})
         self.competition = Competition.deploy({'from': self.admin})
+        self.stake_amt_history = {}
+        self.staker_set_history = {}
+        self.fork = False
 
         # airdrop to participants
         total_airdrop = int(Decimal(0.01) * Decimal(self.token.totalSupply()))
@@ -18,7 +22,7 @@ class TestCompetition:
                             [self.participants[i], single_airdrop, {'from': self.admin}],
                             self.use_multi_admin, exp_revert=False)
 
-        stake_threshold = int(Decimal('10e18'))
+        stake_threshold = int(Decimal('1000e18'))
         challenge_rewards_threshold = int(Decimal('10e18'))
 
         # Cannot initialize with self.token address set to 0.
@@ -55,13 +59,20 @@ class TestCompetition:
             data = fn.encode_input(*args_no_sender)
             self.execute_one_transaction(dest, data, exp_revert)
 
-    def staking_restricted_check(self, non_admin):
-        self.execute_fn(self.competition, self.competition.increaseStake, [non_admin, 1, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
-        self.execute_fn(self.competition, self.competition.decreaseStake, [non_admin, 1, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
-        self.execute_fn(self.token, self.token.increaseStake, [self.competition, 1, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
-        self.execute_fn(self.token, self.token.decreaseStake, [self.competition, 1, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
-        self.execute_fn(self.token, self.token.setStake, [self.competition, 1, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
+    def staking_restricted_check(self, sender):
+        self.execute_fn(self.competition, self.competition.increaseStake, [sender, 1, {'from': sender}], use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.competition, self.competition.decreaseStake, [sender, 1, {'from': sender}], use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.token, self.token.increaseStake, [self.competition, 1, {'from': sender}], use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.token, self.token.decreaseStake, [self.competition, 1, {'from': sender}], use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.token, self.token.setStake, [self.competition, 1, {'from': sender}], use_multi_admin=False, exp_revert=True)
 
+    def staking_backing_submissions_restricted_check(self, sender, backed_participant):
+        self.staking_restricted_check(sender)
+        self.execute_fn(self.competition, self.competition.submitNewPredictions, [getHash(),  {'from': sender}], use_multi_admin=False, exp_revert=True)
+        challenge_number = self.competition.getLatestChallengeNumber()
+        old_submission_hash = self.competition.getSubmission(challenge_number, sender)
+        self.execute_fn(self.competition, self.competition.updateSubmission, [old_submission_hash, getHash(),  {'from': sender}], use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant, [backed_participant,  {'from': sender}], use_multi_admin=False, exp_revert=True)
 
     def unauthorized_calls_check(self, non_admin, admin):
         main_admin_hash = self.competition.RCI_MAIN_ADMIN().hex()
@@ -73,7 +84,6 @@ class TestCompetition:
         self.execute_fn(self.competition, self.competition.revokeRole, [main_admin_hash, admin, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
         self.execute_fn(self.competition, self.competition.grantRole, [main_admin_hash, non_admin, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
         self.execute_fn(self.competition, self.competition.renounceRole, [main_admin_hash, admin, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
-
         self.execute_fn(self.competition, self.competition.updateMessage, [str(getHash()), {'from': non_admin}], use_multi_admin=False, exp_revert=True)
         self.execute_fn(self.competition, self.competition.updateDeadlines, [challenge_number, 0, 123456, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
         self.execute_fn(self.competition, self.competition.updateRewardsThreshold, [1, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
@@ -93,6 +103,12 @@ class TestCompetition:
         self.execute_fn(self.competition, self.competition.advanceToPhase, [self.competition.getPhase(challenge_number) + 1, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
         self.execute_fn(self.competition, self.competition.moveRemainderToPool, [{'from': non_admin}], use_multi_admin=False, exp_revert=True)
 
+        self.execute_fn(self.competition, self.competition.updateChallengeOpenedBlockNumbers, [1, 1, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.competition, self.competition.updateSubmissionClosedBlockNumbers, [1, 1, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.competition, self.competition.updateStakerSet, [[non_admin], [admin], {'from': non_admin}], use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.competition, self.competition.updateHistoricalStakedAmounts, [1, [], [], {'from': non_admin}], use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.competition, self.competition.recordStakes, [0, 1, {'from': non_admin}], use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.competition, self.competition.alignBacking, [[admin], {'from': non_admin}], use_multi_admin=False, exp_revert=True)
 
     def set_new_rewards_percentages(self, admin):
         if random.choice([True, False]):
@@ -108,45 +124,28 @@ class TestCompetition:
             self.execute_fn(self.competition, self.competition.updateTournamentRewardsPercentageInWei, [new_tnmt_rewards_percentage, {'from': admin}], self.use_multi_admin, exp_revert=False)
 
 
-    def test_rewards_percentage_adjustment(self):
-        for challenge_round in range(2):
-            sponsor_amount = int(Decimal('1000e18'));
-            self.execute_fn(self.token, self.token.increaseAllowance, [self.competition, sponsor_amount, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
-            self.execute_fn(self.competition, self.competition.sponsor, [sponsor_amount, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
-
-            pool = self.competition.getCompetitionPool()
-            challenge_rewards_percentage = self.competition.getChallengeRewardsPercentageInWei()
-            tnmt_rewards_percentage = self.competition.getTournamentRewardsPercentageInWei()
-            expected_challenge_budget = int(Decimal(pool * challenge_rewards_percentage) // Decimal('1e18'))
-            expected_tnmt_budget = int(Decimal(pool * tnmt_rewards_percentage) // Decimal('1e18'))
-            expected_staking_budget = pool - expected_challenge_budget - expected_tnmt_budget
-
-            self.execute_fn(self.competition, self.competition.openChallenge, [getHash(), getHash(), getTimestamp(), getTimestamp(), {'from': self.admin}], self.use_multi_admin, exp_revert=False)
-
-            actual_staking_budget = self.competition.getCurrentStakingRewardsBudget()
-            actual_challenge_budget = self.competition.getCurrentChallengeRewardsBudget()
-            actual_tnmt_budget = self.competition.getCurrentTournamentRewardsBudget()
-
-            verify(expected_staking_budget, actual_staking_budget)
-            verify(expected_challenge_budget, actual_challenge_budget)
-            verify(expected_tnmt_budget, actual_tnmt_budget)
-
-            self.execute_fn(self.competition, self.competition.closeSubmission, [{'from': self.admin}], self.use_multi_admin, exp_revert=False)
-            self.set_new_rewards_percentages(self.admin)
-
-            self.execute_fn(self.competition, self.competition.advanceToPhase, [3, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
-            self.set_new_rewards_percentages(self.admin)
-
-            self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
-            self.set_new_rewards_percentages(self.admin)
-
-
     def test_full_run(self):
         self.execute_fn(self.competition, self.competition.initialize, [int(Decimal('10e18')), int(Decimal('10e18')), self.token, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
 
         participants = self.participants
+        cn = self.competition.getLatestChallengeNumber()
+        current_phase = self.competition.getPhase(cn)
 
-        for challenge_round in range(2):
+        if current_phase == 1:
+            self.execute_fn(self.competition, self.competition.closeSubmission, [{'from': self.admin}],
+                            self.use_multi_admin, exp_revert=False)
+            current_phase = self.competition.getPhase(cn)
+        if current_phase == 2:
+            self.execute_fn(self.competition, self.competition.advanceToPhase, [3, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=False)
+            current_phase = self.competition.getPhase(cn)
+        if current_phase == 3:
+            self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=False)
+
+        existing_stake = self.competition.getCurrentTotalStaked()
+        challenge_history = []
+        for challenge_round in range(self.num_rounds):
             # Sponsor
             current_pool = self.competition.getCompetitionPool()
             rewards_threshold = self.competition.getRewardsThreshold()
@@ -164,16 +163,20 @@ class TestCompetition:
             challenge_number = self.competition.getLatestChallengeNumber()
             verify(self.competition.getPhase(challenge_number), 4)
 
+            if self.fork:
+                self.verify_backed_participants_for_self()
+                self.verify_historical_staked_amounts()
+
             #############################
             ########## PHASE 1 ##########
             #############################
 
             dataset_hash = getHash()
             key_hash = getHash()
-
             self.execute_fn(self.competition, self.competition.openChallenge, [dataset_hash, key_hash, getTimestamp(), getTimestamp(), {'from': self.admin}], self.use_multi_admin, exp_revert=False)
 
             challenge_number = self.competition.getLatestChallengeNumber()
+            challenge_history.append(challenge_number)
             verify(1, self.competition.getPhase(challenge_number))
             verify(dataset_hash, self.competition.getDatasetHash(challenge_number).hex())
             verify(key_hash, self.competition.getKeyHash(challenge_number).hex())
@@ -206,8 +209,17 @@ class TestCompetition:
             for i in range(4):
                 verify(new_deadlines[i], self.competition.getDeadlines(challenge_number, new_ddline_indices[i]))
 
+            p = participants[-1]
+            p2 = participants[-2]
+            p3 = participants[-3]
+
+            assert p != p2 and p != p3, 'Not enough accounts! Please re-run the test with more accounts initialized.'
+
+            # test backing logic
+            self.backing_test(p, p2, p3)
+
+
             # test new staking and submissions logic
-            p = random.choice(participants)
 
             if self.competition.getStake(p) != 0:
                 self.execute_fn(self.token, self.token.setStake, [self.competition, 0, {'from': p}], use_multi_admin=False, exp_revert=False)
@@ -227,7 +239,7 @@ class TestCompetition:
             self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold, {'from': p}], use_multi_admin=False, exp_revert=False)
             # increaseStake 0, 0, 1
 
-            self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold - 1, {'from': p}], use_multi_admin=False, exp_revert=False)
+            self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold - 1, {'from': p}], use_multi_admin=False, exp_revert=True)
             # decreaseStake 1, 0, 1
 
             self.execute_fn(self.token, self.token.setStake, [self.competition, 0, {'from': p}], use_multi_admin=False, exp_revert=False)
@@ -258,6 +270,7 @@ class TestCompetition:
             self.execute_fn(self.competition, self.competition.updateSubmission, [self.competition.getSubmission(challenge_number, p.address).hex(), getHash(), {'from': p}], use_multi_admin=False, exp_revert=False)
             # updateSubmission 1, 1, 1
 
+
             ## Withdraw
             length_of_submitters = self.competition.getSubmissionCounter(challenge_number)
             self.execute_fn(self.competition, self.competition.updateSubmission, [self.competition.getSubmission(challenge_number, p.address).hex(), bytes([0] * 32), {'from': p}], use_multi_admin=False, exp_revert=False)
@@ -265,7 +278,7 @@ class TestCompetition:
             verify(length_of_submitters, new_length_of_submitters + 1)
 
             stakers = getRandomSelection(participants, min_num=len(participants) * 3 // 4)
-
+            stake_threshold = self.competition.getStakeThreshold()
             # Increase Stake
             for i in range(len(stakers)):
                 p = stakers[i]
@@ -274,15 +287,17 @@ class TestCompetition:
                     stake_amount = random.randint(1, p_bal)
 
                     if random.choice([True, False]):
-                        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_amount, {'from': p}], use_multi_admin=False, exp_revert=False)
-                        assert self.competition.getStake(p) == stake_amount == self.token.getStake(
-                            self.competition, p)
+                        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_amount, {'from': p}], use_multi_admin=False, exp_revert=stake_amount < stake_threshold)
+                        if stake_amount >= stake_threshold:
+                            assert self.competition.getStake(p) == stake_amount == self.token.getStake(
+                                self.competition, p)
                     else:
                         current_stake = self.competition.getStake(p)
                         self.execute_fn(self.competition, self.competition.increaseStake, [p, stake_amount, {'from': p}], use_multi_admin=False, exp_revert=True)
-                        self.execute_fn(self.token, self.token.increaseStake, [self.competition, stake_amount, {'from': p}], use_multi_admin=False, exp_revert=False)
-                        assert self.competition.getStake(p) == (current_stake + stake_amount) == self.token.getStake(
-                            self.competition, p)
+                        self.execute_fn(self.token, self.token.increaseStake, [self.competition, stake_amount, {'from': p}], use_multi_admin=False, exp_revert=(current_stake + stake_amount) < stake_threshold)
+                        if (current_stake + stake_amount) >= stake_threshold:
+                            assert self.competition.getStake(p) == (current_stake + stake_amount) == self.token.getStake(
+                                self.competition, p)
 
             # Decrease Stake
             random_stakers = getRandomSelection(stakers)
@@ -294,17 +309,19 @@ class TestCompetition:
 
                 if random.choice([True, False]):
                     self.execute_fn(self.token, self.token.setStake, [self.competition, decrease_amt, {'from': p}],
-                                    use_multi_admin=False, exp_revert=False)
-                    assert self.competition.getStake(p) == decrease_amt == self.token.getStake(
-                        self.competition, p)
+                                    use_multi_admin=False, exp_revert=decrease_amt < stake_threshold)
+                    if decrease_amt >= stake_threshold:
+                        assert self.competition.getStake(p) == decrease_amt == self.token.getStake(
+                            self.competition, p)
                 else:
                     current_stake = self.competition.getStake(p)
                     self.execute_fn(self.competition, self.competition.decreaseStake, [p, stake_amount, {'from': p}],
                                     use_multi_admin=False, exp_revert=True)
                     self.execute_fn(self.token, self.token.decreaseStake, [self.competition, decrease_amt, {'from': p}],
-                                    use_multi_admin=False, exp_revert=False)
-                    assert self.competition.getStake(p) == (
-                            current_stake - decrease_amt) == self.token.getStake(self.competition, p)
+                                    use_multi_admin=False, exp_revert=(staked-decrease_amt) < stake_threshold)
+                    if (staked-decrease_amt) >= stake_threshold :
+                        assert self.competition.getStake(p) == (
+                                current_stake - decrease_amt) == self.token.getStake(self.competition, p)
             # Send Submission
             submitters = getRandomSelection(stakers, min_num=len(stakers) * 9 // 10)
             actual_submitted = set()
@@ -315,8 +332,6 @@ class TestCompetition:
                 if staked >= stake_threshold:
                     new_submission = getHash()
                     self.execute_fn(self.competition, self.competition.submitNewPredictions, [new_submission, {'from': p}], use_multi_admin=False, exp_revert=False)
-                    verify(self.competition.getStake(p), self.competition.getStakedAmountForChallenge(
-                        challenge_number, p))
                     actual_submitted.add(p)
 
                     self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold - 1, {'from': p}], use_multi_admin=False, exp_revert=True)
@@ -330,19 +345,15 @@ class TestCompetition:
                 if int(submission.hex(), 16) != 0:
                     if random.choice([True, False]):
                         self.execute_fn(self.competition, self.competition.updateSubmission, [submission, getHash(), {'from': p}], use_multi_admin=False, exp_revert=False)
-                        verify(self.competition.getStake(p), self.competition.getStakedAmountForChallenge(
-                            challenge_number, p))
                         self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold - 1, {'from': p}], use_multi_admin=False, exp_revert=True)
                         self.execute_fn(self.token, self.token.decreaseStake, [self.competition, self.token.getStake(self.competition, p) - stake_threshold + 1, {'from': p}], use_multi_admin=False, exp_revert=True)
                     else:
                         # Withdraw
                         self.execute_fn(self.competition, self.competition.updateSubmission, [submission, bytes([0] * 32), {'from': p}], use_multi_admin=False, exp_revert=False)
-                        verify(0, self.competition.getStakedAmountForChallenge(
-                            challenge_number, p))
                         actual_submitted.remove(p)
 
                         # should be able to withdraw entire stake at this point
-                        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold - 1, {'from': p}], use_multi_admin=False, exp_revert=False)
+                        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold - 1, {'from': p}], use_multi_admin=False, exp_revert=True)
                         self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold, {'from': p}], use_multi_admin=False, exp_revert=False)
                         self.execute_fn(self.token, self.token.decreaseStake, [self.competition, self.token.getStake(self.competition, p), {'from': p}], use_multi_admin=False, exp_revert=False)
                 else:
@@ -351,17 +362,12 @@ class TestCompetition:
             # Verify stake record
             for p in participants:
                 submission = self.competition.getSubmission(challenge_number, p)
-                if int(submission.hex(), 16) != 0:
-                    recorded_stake = self.competition.getStake(p)
-                    recorded_stake_b = self.token.getStake(self.competition, p)
-                    recorded_stake_c = self.competition.getStakedAmountForChallenge(challenge_number, p)
+                recorded_stake = self.competition.getStake(p)
+                recorded_stake_b = self.token.getStake(self.competition, p)
 
-                    assert recorded_stake == recorded_stake_b == recorded_stake_c, '{} : {} : {}'.format(
-                        recorded_stake,
-                        recorded_stake_b,
-                        recorded_stake_c)
-                else:
-                    verify(0, self.competition.getStakedAmountForChallenge(challenge_number, p))
+                assert recorded_stake == recorded_stake_b, '{} : {}'.format(
+                    recorded_stake,
+                    recorded_stake_b)
 
             # Increase Stake should still work at this point regardless of submission
             for p in participants:
@@ -370,25 +376,19 @@ class TestCompetition:
                 if p_bal > 1:
                     if random.choice([True, False]):
                         stake_amount = random.randint(p_stake + 1, p_stake + p_bal)
-                        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_amount, {'from': p}], use_multi_admin=False, exp_revert=False)
-                        assert self.competition.getStake(p) == stake_amount == self.token.getStake(
-                            self.competition, p)
-                        submission = self.competition.getSubmission(challenge_number, p)
-                        if int(submission.hex(), 16) != 0:
-                            verify(self.competition.getStake(p), self.competition.getStakedAmountForChallenge(
-                                challenge_number, p))
+                        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_amount, {'from': p}], use_multi_admin=False, exp_revert=stake_amount < stake_threshold)
+                        if stake_amount >= stake_threshold:
+                            assert self.competition.getStake(p) == stake_amount == self.token.getStake(
+                                self.competition, p)
                     else:
                         stake_amount = random.randint(1, p_bal)
                         current_stake = self.competition.getStake(p)
                         self.execute_fn(self.competition, self.competition.increaseStake, [p, stake_amount, {'from': p}], use_multi_admin=False, exp_revert=True)
-                        self.execute_fn(self.token, self.token.increaseStake, [self.competition, stake_amount, {'from': p}], use_multi_admin=False, exp_revert=False)
-                        assert self.competition.getStake(p) == (
-                                current_stake + stake_amount) == self.token.getStake(
-                            self.competition, p)
-                        submission = self.competition.getSubmission(challenge_number, p)
-                        if int(submission.hex(), 16) != 0:
-                            assert self.competition.getStake(p) == self.competition.getStakedAmountForChallenge(
-                                challenge_number, p)
+                        self.execute_fn(self.token, self.token.increaseStake, [self.competition, stake_amount, {'from': p}], use_multi_admin=False, exp_revert=(p_stake + stake_amount) < stake_threshold)
+                        if (p_stake + stake_amount) >= stake_threshold:
+                            assert self.competition.getStake(p) == (
+                                    current_stake + stake_amount) == self.token.getStake(
+                                self.competition, p)
 
             self.unauthorized_calls_check(non_admin=participants[-1], admin=self.admin)
 
@@ -424,8 +424,44 @@ class TestCompetition:
             #############################
             self.execute_fn(self.competition, self.competition.closeSubmission, [{'from': self.admin}], self.use_multi_admin, exp_revert=False)
             verify(2, self.competition.getPhase(challenge_number))
+            self.execute_fn(self.competition, self.competition.recordStakes,
+                            [0, 1, {'from': self.participants[-1]}], self.use_multi_admin, exp_revert=True)
+            staker_list = self.competition.getAllStakers()
+            recorded_stakes = self.competition.getHistoricalStakeAmounts(challenge_number, staker_list)
+            verify(0, sum(recorded_stakes))
+            chunk = 5
+            for i in range(0, len(staker_list), chunk):
+                if (i+chunk) > len(staker_list):
+                    end_index = len(staker_list)
+                else:
+                    end_index = i + chunk
+                self.execute_fn(self.competition, self.competition.recordStakes, [i, end_index, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
+            self.execute_fn(self.competition, self.competition.recordStakes,
+                            [0, len(staker_list) + 1, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
 
-            self.staking_restricted_check(non_admin=participants[-1])
+            self.stake_amt_history[challenge_number] = {}
+            for s in staker_list:
+                self.stake_amt_history[challenge_number][s] = self.competition.getStake(s)
+                verify(self.competition.getStake(s), self.competition.getHistoricalStakeAmounts(challenge_number, [s])[0])
+            self.staker_set_history[challenge_number] = set(self.competition.getHistoricalStakers(challenge_number))
+
+            staker_list = self.competition.getAllStakers()
+            total_staked = 0
+            total_staked2 = 0
+            for st in staker_list:
+                total_staked2 += self.competition.getStake(st)
+
+            for i in range(0, len(staker_list), chunk):
+                if (i + chunk) > len(staker_list):
+                    stakers = staker_list[i:]
+                else:
+                    stakers = staker_list[i:i+chunk]
+
+                recorded_stakes = self.competition.getHistoricalStakeAmounts(challenge_number, stakers)
+                total_staked += sum(recorded_stakes)
+            verify(self.competition.getCurrentTotalStaked(), total_staked)
+
+            self.staking_backing_submissions_restricted_check(participants[-1], participants[-2])
 
             submission_count = self.competition.getSubmissionCounter(challenge_number)
 
@@ -445,14 +481,6 @@ class TestCompetition:
             verify(self.competition.getSubmissionCounter(challenge_number), len(submitters_list))
 
             verify(actual_submitted, set(submitters_list))
-
-            # Verify total stakes of submitters
-            total_stakes = 0
-            total_recorded_stakes = 0
-            for s in actual_submitted:
-                total_stakes += self.competition.getStake(s)
-                total_recorded_stakes += self.competition.getStakedAmountForChallenge(challenge_number, s)
-            verify(total_stakes, total_recorded_stakes)
 
             self.unauthorized_calls_check(non_admin=participants[-1], admin=self.admin)
 
@@ -501,6 +529,7 @@ class TestCompetition:
             #############################
             ########## PHASE 3 ##########
             #############################
+            self.staking_backing_submissions_restricted_check(participants[-1], participants[-2])
             p = submitters[0]
             self.execute_fn(self.competition, self.competition.advanceToPhase, [3, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
             verify(3, self.competition.getPhase(challenge_number))
@@ -593,8 +622,8 @@ class TestCompetition:
             #############################
             ########## PHASE 4 ##########
             #############################
+            self.staking_backing_submissions_restricted_check(participants[-1], participants[-2])
             self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
-
             self.unauthorized_calls_check(non_admin=participants[-1], admin=self.admin)
 
             # Test authorized actions expected to fail
@@ -646,7 +675,7 @@ class TestCompetition:
             for p in participants:
                 total_stake += self.competition.getStake(p)
 
-            verify(total_stake, self.competition.getCurrentTotalStaked())
+            verify(total_stake, self.competition.getCurrentTotalStaked() - existing_stake)
 
             competition_pool = self.competition.getCompetitionPool()
             verify(0, self.competition.getRemainder())
@@ -661,7 +690,7 @@ class TestCompetition:
             else:
                 admin_bal = self.token.balanceOf(self.multi_sig)
 
-            transfer_amount = int(0.001 * admin_bal)
+            transfer_amount = admin_bal // 1000
             self.execute_fn(self.token, self.token.transfer, [self.competition, transfer_amount, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
             verify(transfer_amount, self.competition.getRemainder())
             verify(self.token.balanceOf(self.competition),
@@ -672,3 +701,391 @@ class TestCompetition:
             verify(self.token.balanceOf(self.competition),
                    self.competition.getCompetitionPool() + self.competition.getCurrentTotalStaked() + self.competition.getRemainder())
             verify(competition_pool + transfer_amount, self.competition.getCompetitionPool())
+
+            for cn in challenge_history:
+                verify(self.staker_set_history[cn], set(self.competition.getHistoricalStakers(cn)))
+                for s in self.staker_set_history[cn]:
+                    verify(self.stake_amt_history[cn][s], self.competition.getHistoricalStakeAmounts(cn, [s])[0])
+
+    def staking_submissions_test(self, challenge_number, p):
+        # test new staking and submissions logic
+
+        if self.competition.getStake(p) != 0:
+            self.execute_fn(self.token, self.token.setStake, [self.competition, 0, {'from': p}], use_multi_admin=False,
+                            exp_revert=False)
+
+        # Should not be able to withdraw beyond current stake.
+        self.execute_fn(self.token, self.token.decreaseStake, [self.competition, 1, {'from': p}], use_multi_admin=False,
+                        exp_revert=True)
+
+        stake_threshold = self.competition.getStakeThreshold()
+        verify(bytes([0] * 32).hex(), self.competition.getSubmission(challenge_number, p).hex())
+
+        self.execute_fn(self.competition, self.competition.submitNewPredictions, [getHash(), {'from': p}],
+                        use_multi_admin=False, exp_revert=True)
+        # submitNewPrediction 0, 0, 0
+
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, p).hex(), getHash(), {'from': p}],
+                        use_multi_admin=False, exp_revert=True)
+        # updateSubmission 0, 0, 0
+
+        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold, {'from': p}],
+                        use_multi_admin=False, exp_revert=False)
+        # increaseStake 0, 0, 1
+
+        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold - 1, {'from': p}],
+                        use_multi_admin=False, exp_revert=True)
+        # decreaseStake 1, 0, 1
+
+        self.execute_fn(self.token, self.token.setStake, [self.competition, 0, {'from': p}], use_multi_admin=False,
+                        exp_revert=False)
+        # decreaseStake 0, 0, 1
+
+        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold, {'from': p}],
+                        use_multi_admin=False, exp_revert=False)
+        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold + 1, {'from': p}],
+                        use_multi_admin=False, exp_revert=False)
+        # increaseStake 1, 0, 1
+
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, p).hex(), getHash(), {'from': p}],
+                        use_multi_admin=False, exp_revert=True)
+        # updateSubmission 1, 0, 0
+
+        self.execute_fn(self.competition, self.competition.submitNewPredictions, [getHash(), {'from': p}],
+                        use_multi_admin=False, exp_revert=False)
+        # submitNewPrediction 1, 0, 1
+
+        self.execute_fn(self.competition, self.competition.submitNewPredictions, [getHash(), {'from': p}],
+                        use_multi_admin=False, exp_revert=True)
+        # submitNewPrediction 1, 1, 0
+
+        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold + 2, {'from': p}],
+                        use_multi_admin=False, exp_revert=False)
+        # increaseStake 1, 1, 1
+
+        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold, {'from': p}],
+                        use_multi_admin=False, exp_revert=False)
+        # decreaseStake 1, 1, 1 final stake >= threshold
+
+        self.execute_fn(self.token, self.token.setStake, [self.competition, stake_threshold - 1, {'from': p}],
+                        use_multi_admin=False, exp_revert=True)
+        # decreaseStake 1, 1, 0 final stake < threshold
+
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, p.address).hex(), getHash(), {'from': p}],
+                        use_multi_admin=False, exp_revert=False)
+        # updateSubmission 1, 1, 1
+
+        ## Withdraw
+        length_of_submitters = self.competition.getSubmissionCounter(challenge_number)
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, p.address).hex(), bytes([0] * 32),
+                         {'from': p}], use_multi_admin=False, exp_revert=False)
+        new_length_of_submitters = self.competition.getSubmissionCounter(challenge_number)
+        verify(length_of_submitters, new_length_of_submitters + 1)
+
+    def backing_test(self, participant, backed_participant, backed_participant_2):
+        # Allowable states.
+        # State 0: Stake 0, Submission 0, Backed 0
+        # State 1: Stake 1, Submission 0, Backed 0
+        # State 2: Stake 1, Submission 1, Backed 0
+        # State 3: Stake 1, Submission 0, Backed 1
+        # State 4: Stake 1, Submission 1, Backed 1
+
+        # Initialize to State 0
+        ###########
+        # STATE 0 #
+        ###########
+        challenge_number = self.competition.getLatestChallengeNumber()
+        current_submission = self.competition.getSubmission(challenge_number, participant).hex()
+        if int(current_submission, 16) != 0:
+            self.execute_fn(self.competition, self.competition.updateSubmission,
+                            [self.competition.getSubmission(challenge_number, participant).hex(), (0).to_bytes(32, 'big'),
+                             {'from': participant}],
+                            use_multi_admin=False, exp_revert=False)
+        if (self.competition.getBackedParticipant(participant) != '0x'+('0'*40)) and (self.competition.getBackedParticipant(participant) != participant):
+            self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                            [participant,
+                             {'from': participant}],
+                            use_multi_admin=False, exp_revert=False)
+        if self.competition.getStake(participant) > 0:
+            self.execute_fn(self.token, self.token.setStake,
+                            [self.competition, 0,
+                             {'from': participant}],
+                            use_multi_admin=False, exp_revert=False)
+
+        # should fail
+        self.execute_fn(self.competition, self.competition.submitNewPredictions,
+                        [getHash(),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, participant).hex(), getHash(),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        [backed_participant,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+        # increase stake by an amount less than the threshold. Should fail.
+        if (self.competition.getStake(participant) + 1) < self.competition.getStakeThreshold():
+            self.execute_fn(self.token, self.token.setStake,
+                            [self.competition, 1,
+                             {'from': participant}],
+                            use_multi_admin=False, exp_revert=True)
+
+        # Move from state 0 to state 1: Increase Stake
+        current_backer_set = set(self.competition.getAllBackers(participant))
+        self.execute_fn(self.token, self.token.setStake,
+                        [self.competition, self.competition.getStakeThreshold(),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+        new_backer_set = set(self.competition.getAllBackers(participant))
+        delta = list(new_backer_set - current_backer_set)
+        assert 1 == len(delta)
+        assert participant == self.competition.getBackedParticipant(participant), 'Default participant incorrect. Exp {} got {}'.format(participant, self.competition.getBackedParticipant(participant))
+        assert participant == delta[0], 'Default backers incorrect. Exp {} got {}'.format(participant, delta[0])
+
+        ###########
+        # STATE 1 #
+        ###########
+        # Move from State 1 to State 2: Add submission.
+        current_backer_set = set(self.competition.getAllBackers(participant))
+        current_backed = self.competition.getBackedParticipant(participant)
+        self.execute_fn(self.competition, self.competition.submitNewPredictions,
+                        [getHash(),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+        new_backer_set = set(self.competition.getAllBackers(participant))
+        new_backed = self.competition.getBackedParticipant(participant)
+        assert participant == self.competition.getBackedParticipant(
+            participant), 'Default participant incorrect. Exp {} got {}'.format(participant,
+                                                                                self.competition.getBackedParticipant(
+                                                                                    participant))
+        assert current_backer_set == new_backer_set
+        assert current_backed == new_backed
+
+        ###########
+        # STATE 2 #
+        ###########
+        # should fail
+        # Try to remove stake when in state 2
+        self.execute_fn(self.token, self.token.setStake,
+                        [self.competition, 0,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+
+        # Move from state 2 to state 2: Change stake but remain above threshold.
+        self.execute_fn(self.token, self.token.setStake,
+                        [self.competition, self.competition.getStakeThreshold() + 3,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 2 to state 2: Update submission.
+        current_backer_set = self.competition.getAllBackers(participant)
+        current_backed = self.competition.getBackedParticipant(participant)
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, participant).hex(), getHash(),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+        new_backer_set = self.competition.getAllBackers(participant)
+        new_backed = self.competition.getBackedParticipant(participant)
+        assert participant == self.competition.getBackedParticipant(
+            participant), 'Default participant incorrect. Exp {} got {}'.format(participant,
+                                                                                self.competition.getBackedParticipant(
+                                                                                    participant))
+        assert new_backer_set == current_backer_set
+        assert current_backed == new_backed
+
+        # Move from state 2 to state 2: Increase Stake
+        self.execute_fn(self.token, self.token.increaseStake,
+                        [self.competition, 1,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 2 to state 2: Decrease Stake
+        self.execute_fn(self.token, self.token.decreaseStake,
+                        [self.competition, 1,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 2 to state 4: Bet on other participant.
+        current_backer_set = set(self.competition.getAllBackers(backed_participant))
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        [backed_participant,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+        assert backed_participant == self.competition.getBackedParticipant(
+            participant), 'New backed participant incorrect. Exp {} got {}'.format(backed_participant,
+                                                                                self.competition.getBackedParticipant(
+                                                                                    participant))
+        new_backer_set = set(self.competition.getAllBackers(backed_participant))
+        delta = list(new_backer_set - current_backer_set)
+        assert 1 == len(delta), 'Backer set delta incorrect. Exp {} got {}'.format(1, delta)
+        assert participant == delta[0], 'New backers incorrect. Exp {} got {}'.format(participant,
+                                                                  delta[0])
+
+        ###########
+        # STATE 4 #
+        ###########
+        # should fail
+        # Try to remove stake when in state 4
+        self.execute_fn(self.token, self.token.setStake,
+                        [self.competition, 0,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+
+        # Try to transfer backing to current.
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        [backed_participant,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+
+        # Move from state 4 to state 4: Update submission.
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, participant).hex(), getHash(),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 4 to state 4: Change stake.
+        self.execute_fn(self.token, self.token.setStake,
+                        [self.competition, self.competition.getStakeThreshold() + 5,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 4 to state 4: Change backed participant.
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        [backed_participant_2,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 4 to state 2: Change backed participant to self.
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        [participant,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 2 back to state 1: Remove submission
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, participant).hex(), (0).to_bytes(32, 'big'),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 1 to state 3: Bet on other participant.
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        [backed_participant,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+        ###########
+        # STATE 3 #
+        ###########
+        # should fail
+        # Try to remove stake when in state 3
+        self.execute_fn(self.token, self.token.setStake,
+                        [self.competition, 0,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+
+        # Try to update submission when in state 3
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, participant).hex(), getHash(),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+
+        # Move from state 3 to state 3: Update backed participant
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        [backed_participant_2,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 3 to state 3: Increase Stake
+        self.execute_fn(self.token, self.token.increaseStake,
+                        [self.competition, 1,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 3 to state 3: Decrease Stake
+        self.execute_fn(self.token, self.token.decreaseStake,
+                        [self.competition, 1,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 3 to state 4: Send submission.
+        current_backer_set = self.competition.getAllBackers(participant)
+        current_backed = self.competition.getBackedParticipant(participant)
+        self.execute_fn(self.competition, self.competition.submitNewPredictions,
+                        [getHash(),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+        new_backer_set = self.competition.getAllBackers(participant)
+        new_backed = self.competition.getBackedParticipant(participant)
+        assert new_backer_set == current_backer_set
+        assert current_backed == new_backed
+
+        ###########
+        # STATE 4 #
+        ###########
+        # should fail
+        # Try to remove stake when in state 4
+        self.execute_fn(self.token, self.token.setStake,
+                        [self.competition, 0,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+
+        # Try to transfer backing to current.
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        [backed_participant_2,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+
+        # Move from state 4 to state 4: Update submission.
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, participant).hex(), getHash(),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 4 to state 4: Change backed participant.
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        [backed_participant,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 4 to state 4: Increase Stake
+        self.execute_fn(self.token, self.token.increaseStake,
+                        [self.competition, 1,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 4 to state 4: Decrease Stake
+        self.execute_fn(self.token, self.token.decreaseStake,
+                        [self.competition, 1,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 4 back to state 3: Remove submission
+        self.execute_fn(self.competition, self.competition.updateSubmission,
+                        [self.competition.getSubmission(challenge_number, participant).hex(), (0).to_bytes(32, 'big'),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Should fail: back 0 address
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        ['0x' + ('0'*40),
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=True)
+
+        # Move from state 3 to state 1: Bet on self.
+        self.execute_fn(self.competition, self.competition.updateBackedParticipant,
+                        [participant,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        # Move from state 1 to state 0: Reduce stake.
+        self.execute_fn(self.token, self.token.setStake,
+                        [self.competition, 0,
+                         {'from': participant}],
+                        use_multi_admin=False, exp_revert=False)
+
+        verify('0x' + (40*'0'), self.competition.getBackedParticipant(participant))

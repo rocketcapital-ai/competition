@@ -3,8 +3,10 @@ pragma solidity 0.8.4;
 // SPDX-License-Identifier: MIT
 
 import './../interfaces/ICompetition.sol';
+import './../interfaces/ICompetitionV2.sol';
 import './../interfaces/IToken.sol';
 import './CompetitionStorage.sol';
+import './CompetitionStorageV2.sol';
 import './AccessControlRci.sol';
 import './standard/proxy/utils/Initializable.sol';
 
@@ -15,7 +17,7 @@ import './standard/proxy/utils/Initializable.sol';
  * @dev IPFS hash format: Hash Identifier (2 bytes), Actual Hash (May eventually take on other formats but currently 32 bytes)
  *
  */
-contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Initializable {
+contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Initializable, ICompetitionV2, CompetitionStorageV2 {
 
     constructor(){}
 
@@ -44,15 +46,21 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     {
         uint32 challengeNumber = _challengeCounter;
         require(msg.sender == address(_token), "Competition - increaseStake: Please call this function via the token contract.");
-        require(_challenges[challengeNumber].phase != 2, "Competition - increaseStake: Please wait for the staking period to unlock before modifying your stake.");
+        require(_challenges[challengeNumber].phase == 1, "Competition - increaseStake: Please wait for the staking period to unlock before modifying your stake.");
+        require(amountToken > 0, "Competition - increaseStake: Amount to increase by must be greater than 0");
 
         uint256 currentBal = _stakes[staker];
-        if (_challenges[challengeNumber].submitterInfo[staker].submission != bytes32(0)){
-            _challenges[challengeNumber].submitterInfo[staker].staked = currentBal + amountToken;
-        }
 
         _stakes[staker] = currentBal + amountToken;
         _currentTotalStaked += amountToken;
+
+        EnumerableSet.add(stakerSet, staker);
+
+        if (_backed[staker] == address(0)) {
+            _updateBackedParticipant(staker, staker, address(0));
+        }
+
+        require(((currentBal + amountToken) >= _stakeThreshold), "Competition - increaseStake: Your final balance must be either 0 or at least the stake threshold.");
 
         success = true;
 
@@ -65,14 +73,25 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     {
         uint32 challengeNumber = _challengeCounter;
         require(msg.sender == address(_token), "Competition - decreaseStake: Please call this function via the token contract.");
-        require(_challenges[_challengeCounter].phase != 2, "Competition - decreaseStake: Please wait for the staking period to unlock before modifying your stake.");
+        require(_challenges[_challengeCounter].phase == 1, "Competition - decreaseStake: Please wait for the staking period to unlock before modifying your stake.");
+        require(amountToken > 0, "Competition - increaseStake: Amount to decrease by must be greater than 0");
 
         uint256 currentBal = _stakes[staker];
         require(amountToken <= currentBal, "Competition - decreaseStake: Insufficient funds for withdrawal.");
 
-        if (_challenges[challengeNumber].submitterInfo[staker].submission != bytes32(0)){
-            require((currentBal - amountToken) >= _stakeThreshold, "Competition - decreaseStake: You may not lower your stake below the threshold while you have an existing submission.");
-            _challenges[challengeNumber].submitterInfo[staker].staked = currentBal - amountToken;
+        require(((currentBal - amountToken) == 0) ||
+            ((currentBal - amountToken) >= _stakeThreshold), "Competition - decreaseStake: Your final balance must be either 0 or at least the stake threshold.");
+
+        address oldBackedParticipant = _backed[staker];
+        bool submissionExists = _challenges[challengeNumber].submitterInfo[staker].submission != bytes32(0);
+        bool backingOthers = (oldBackedParticipant != staker) && (oldBackedParticipant != address(0));
+
+        if (currentBal == amountToken){
+            require(!(submissionExists || backingOthers), "Competition - decreaseStake: You may not lower your stake below the threshold while you have an existing submission or are backing other participants.");
+            EnumerableSet.remove(stakerSet, staker);
+            if (oldBackedParticipant != address(0)){
+                _updateBackedParticipant(address(0), staker, oldBackedParticipant);
+            }
         }
 
         _stakes[staker] = currentBal - amountToken;
@@ -80,6 +99,40 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         success = _token.transfer(staker, amountToken);
 
         emit StakeDecreased(staker, amountToken);
+    }
+
+    function updateBackedParticipant(address backedParticipant)
+    external override
+    returns (bool success)
+    {
+        require(backedParticipant != address(0), "Competition - updateBackedParticipant: Not allowed to back the 0 address.");
+        require(_challenges[_challengeCounter].phase == 1, "Competition - updateBackedParticipant: You may only modify your backing details when the submission window is open.");
+        address oldBackedParticipant = _backed[msg.sender];
+        success = _updateBackedParticipant(backedParticipant, msg.sender, oldBackedParticipant);
+    }
+
+    function
+    _updateBackedParticipant(address backedParticipant, address backer, address oldBackedParticipant)
+    private
+    returns (bool success)
+    {
+        uint32 challengeNumber = _challengeCounter;
+        require(_stakes[backer] >= _stakeThreshold, "Competition - updateBackedParticipant: Please stake at least the backing minimum amount before selecting a participant to back.");
+        require(oldBackedParticipant != backedParticipant, "Competition - updateBackedParticipant: You are already backing this participant.");
+
+        // Set the backer's backed participant to be `backedParticipant`.
+        _backed[backer] = backedParticipant;
+
+        // If the backer is already backing a participant, remove the backer from the old backedParticipant's set of backers.
+        EnumerableSet.remove(_backers[oldBackedParticipant], backer);
+
+        // Add the backer to the new backedParticipant's set of backers.
+        if (backedParticipant != address(0)){
+            EnumerableSet.add(_backers[backedParticipant], backer);
+        }
+
+        success = true;
+        emit BackedParticipantUpdated(challengeNumber, backer, backedParticipant);
     }
 
     function submitNewPredictions(bytes32 submissionHash)
@@ -90,7 +143,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         require(currentBal >= _stakeThreshold, "Competition - submitNewPredictions: Stake is below threshold.");
         challengeNumber = _updateSubmission(bytes32(0), submissionHash);
         EnumerableSet.add(_challenges[challengeNumber].submitters, msg.sender);
-        _challenges[challengeNumber].submitterInfo[msg.sender].staked = currentBal;
     }
 
     function updateSubmission(bytes32 oldSubmissionHash, bytes32 newSubmissionHash)
@@ -102,7 +154,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
 
         if (newSubmissionHash == bytes32(0)){
             EnumerableSet.remove(_challenges[challengeNumber].submitters, msg.sender);
-            _challenges[challengeNumber].submitterInfo[msg.sender].staked = 0;
         }
     }
 
@@ -222,6 +273,8 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         _updateDeadlines(challengeNumber, 0, submissionCloseDeadline);
         _updateDeadlines(challengeNumber, 1, nextChallengeDeadline);
 
+        challengeOpenedBlockNumbers[challengeNumber] = block.number;
+
         success = true;
 
         emit ChallengeOpened(challengeNumber);
@@ -278,6 +331,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         uint32 challengeNumber = _challengeCounter;
         require(_challenges[challengeNumber].phase == 1, "Competition - closeSubmission: Challenge in unexpected state.");
         _challenges[challengeNumber].phase = 2;
+        submissionClosedBlockNumbers[challengeNumber] = block.number;
         success = true;
 
         emit SubmissionClosed(challengeNumber);
@@ -442,6 +496,86 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         emit RemainderMovedToPool(remainder);
     }
 
+    function updateChallengeOpenedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
+    external override onlyAdmin
+    returns (bool success)
+    {
+        challengeOpenedBlockNumbers[challengeNumber] = blockNumber;
+        success = true;
+    }
+
+    function updateSubmissionClosedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
+    external override onlyAdmin
+    returns (bool success)
+    {
+        submissionClosedBlockNumbers[challengeNumber] = blockNumber;
+        success = true;
+    }
+
+    function updateStakerSet(address[] calldata toRemove, address[] calldata toAdd)
+    external override onlyAdmin
+    returns (bool success)
+    {
+        for (uint i = 0; i < toRemove.length; i++){
+            EnumerableSet.remove(stakerSet, toRemove[i]);
+        }
+
+        for (uint i = 0; i < toAdd.length; i++){
+            EnumerableSet.add(stakerSet, toAdd[i]);
+        }
+        success = true;
+    }
+
+    function updateHistoricalStakedAmounts(uint32 historicalChallengeNumber, address[] calldata stakers, uint256[] calldata amounts)
+    external override onlyAdmin
+    returns (bool success)
+    {
+        require(_challenges[_challengeCounter].phase >= 2, "Competition - updateHistoricalStakedAmounts: Challenge is in unexpected state.");
+        require((stakers.length == amounts.length), "Competition - updateHistoricalStakedAmounts: Number of submitters and rewards are different.");
+
+        for (uint i = 0; i < stakers.length; i++){
+            _historicalStakeAmounts[historicalChallengeNumber][stakers[i]] = amounts[i];
+            if (amounts[i] > 0){
+                EnumerableSet.add(_historicalStakerSet[historicalChallengeNumber], stakers[i]);
+            } else {
+                EnumerableSet.remove(_historicalStakerSet[historicalChallengeNumber], stakers[i]);
+            }
+        }
+
+        emit HistoricalStakedAmountsUpdated(historicalChallengeNumber);
+    }
+
+    function recordStakes(uint256 startIndex, uint256 endIndex)
+    external override onlyAdmin
+    returns (bool success)
+    {
+        uint32 challengeNumber = _challengeCounter;
+        require(_challenges[challengeNumber].phase >= 2, "Competition - closeSubmission: Challenge in unexpected state.");
+        for (uint i = startIndex; i < endIndex; i++){
+            address staker = (EnumerableSet.at(stakerSet, i));
+            EnumerableSet.add(_historicalStakerSet[challengeNumber], staker);
+            _historicalStakeAmounts[challengeNumber][staker] = _stakes[staker];
+        }
+        success = true;
+    }
+
+    function alignBacking(address[] calldata backers)
+    external override onlyAdmin
+    returns (bool success)
+    {
+        for (uint i = 0; i < backers.length; i++){
+            address backedParticipant = _backed[backers[i]];
+            uint256 stake = _stakes[backers[i]];
+            if ((stake == 0) && (backedParticipant != address(0))){
+                _updateBackedParticipant(address(0), backers[i], backedParticipant);
+            }
+            else if ((stake > 0) && (backedParticipant == address(0))){
+                _updateBackedParticipant(backers[i], backers[i], backedParticipant);
+            }
+        }
+        success = true;
+    }
+
     /**
     READ METHODS
     **/
@@ -538,23 +672,25 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function getSubmissionCounter(uint32 challengeNumber)
-    view external override
+    view public override
     returns (uint256 submissionCounter)
     {
         submissionCounter = EnumerableSet.length(_challenges[challengeNumber].submitters);
     }
 
     function getSubmitters(uint32 challengeNumber, uint256 startIndex, uint256 endIndex)
+    view public override
+    returns (address[] memory)
+    {
+        EnumerableSet.AddressSet storage submittersSet = _challenges[challengeNumber].submitters;
+        return _getListFromSet(submittersSet, startIndex, endIndex);
+    }
+
+    function getAllSubmitters(uint32 challengeNumber)
     view external override
     returns (address[] memory)
     {
-        address[] memory submitters = new address[](endIndex - startIndex);
-        EnumerableSet.AddressSet storage submittersSet = _challenges[challengeNumber].submitters;
-        for (uint i = startIndex; i < endIndex; i++) {
-            submitters[i - startIndex] = (EnumerableSet.at(submittersSet, i));
-        }
-
-        return submitters;
+        return getSubmitters(challengeNumber, 0, getSubmissionCounter(challengeNumber));
     }
 
     function getPhase(uint32 challengeNumber)
@@ -592,11 +728,13 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         submissionHash = _challenges[challengeNumber].submitterInfo[participant].submission;
     }
 
+    // This is no longer in use. Keeping the function so that the data layout will be the same in ICompetition.
     function getStakedAmountForChallenge(uint32 challengeNumber, address participant)
     view external override
     returns (uint256 staked)
     {
-        staked = _challenges[challengeNumber].submitterInfo[participant].staked;
+//        staked = _challenges[challengeNumber].submitterInfo[participant].staked;
+        staked = 0;
     }
 
     function getStakingRewards(uint32 challengeNumber, address participant)
@@ -652,24 +790,128 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function getDeadlines(uint32 challengeNumber, uint256 index)
-    external view override
+    view external override
     returns (uint256 deadline)
     {
         deadline = _challenges[challengeNumber].deadlines[index];
     }
 
     function getRemainder()
-    public view override
+    view public override
     returns (uint256 remainder)
     {
         remainder = _token.balanceOf(address(this)) - _currentTotalStaked - _competitionPool;
     }
 
     function getMessage()
-    external view override
+    view external override
     returns (string memory message)
     {
         message = _message;
+    }
+
+    function _getListFromSet(EnumerableSet.AddressSet storage setOfData, uint256 startIndex, uint256 endIndex)
+    view internal
+    returns (address[] memory)
+    {
+        address[] memory listOfData = new address[](endIndex - startIndex);
+        for (uint i = startIndex; i < endIndex; i++){
+            listOfData[i - startIndex] = (EnumerableSet.at(setOfData, i));
+        }
+        return listOfData;
+    }
+
+    function getHistoricalStakersCounter(uint32 challengeNumber)
+    view public override
+    returns (uint256 stakersCounter)
+    {
+        stakersCounter = EnumerableSet.length(_historicalStakerSet[challengeNumber]);
+    }
+
+    function getHistoricalStakersPartial(uint32 challengeNumber, uint256 startIndex, uint256 endIndex)
+    view public override
+    returns (address[] memory)
+    {
+        return _getListFromSet(_historicalStakerSet[challengeNumber], startIndex, endIndex);
+    }
+
+    function getHistoricalStakers(uint32 challengeNumber)
+    view external override
+    returns (address[] memory)
+    {
+        return getHistoricalStakersPartial(challengeNumber, 0, getHistoricalStakersCounter(challengeNumber));
+    }
+
+    function getHistoricalStakeAmounts(uint32 challengeNumber, address[] calldata stakers)
+    view external override
+    returns (uint256[] memory)
+    {
+        uint256[] memory stakeAmountList = new uint256[](stakers.length);
+        for (uint i = 0; i < stakers.length; i++){
+            stakeAmountList[i] = _historicalStakeAmounts[challengeNumber][stakers[i]];
+        }
+        return stakeAmountList;
+    }
+
+    function getBackedParticipant(address backer)
+    view external override
+    returns (address backedParticipant)
+    {
+        backedParticipant = _backed[backer];
+    }
+
+    function getBackersCounter(address backedParticipant)
+    view public override
+    returns (uint256 backersCounter)
+    {
+        backersCounter = EnumerableSet.length(_backers[backedParticipant]);
+    }
+
+    function getBackers(address backedParticipant, uint256 startIndex, uint256 endIndex)
+    view public override
+    returns (address[] memory)
+    {
+        EnumerableSet.AddressSet storage backersSet = _backers[backedParticipant];
+        return _getListFromSet(backersSet, startIndex, endIndex);
+    }
+
+    function getAllBackers(address backedParticipant)
+    view external override
+    returns (address[] memory)
+    {
+        return getBackers(backedParticipant, 0, getBackersCounter(backedParticipant));
+    }
+
+    function getBackingTotal(address backedParticipant)
+    view external override
+    returns (uint256 totalAmount)
+    {
+        totalAmount = 0;
+        EnumerableSet.AddressSet storage backersSet = _backers[backedParticipant];
+        for (uint i = 0; i < getBackersCounter(backedParticipant); i++){
+            totalAmount += _stakes[EnumerableSet.at(backersSet, i)];
+        }
+    }
+
+    function getStakersCounter()
+    view public override
+    returns (uint256 stakersCounter)
+    {
+        stakersCounter = EnumerableSet.length(stakerSet);
+    }
+
+    function getStakers(uint256 startIndex, uint256 endIndex)
+    view public override
+    returns (address[] memory)
+    {
+        return _getListFromSet(stakerSet, startIndex, endIndex);
+    }
+
+    function getAllStakers()
+    view external override
+    returns (address[] memory)
+    {
+        return getStakers(0, getStakersCounter());
     }
 
     /**
