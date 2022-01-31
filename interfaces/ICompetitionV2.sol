@@ -135,44 +135,6 @@ interface ICompetitionV2{
     **/
 
     /**
-    * @dev Method for admin to manually modify the block number where challenge was opened.
-    * @param challengeNumber Challenge number of block number being modified.
-    * @param blockNumber New block number to update to.
-    * @return success True if the operation completed successfully.
-    **/
-    function updateChallengeOpenedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
-    external returns (bool success);
-
-    /**
-    * @dev Method for admin to manually modify the block number where submission was closed.
-    * @param challengeNumber Challenge number of block number being modified.
-    * @param blockNumber New block number to update to.
-    * @return success True if the operation completed successfully.
-    **/
-    function updateSubmissionClosedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
-    external returns (bool success);
-
-
-    /**
-    * @dev Method for admin to manually modify the staker set.
-    * @param toRemove List of staker addresses to remove.
-    * @param toAdd List of staker addresses to add.
-    * @return success True if the operation completed successfully.
-    **/
-    function updateStakerSet(address[] calldata toRemove, address[] calldata toAdd)
-    external returns (bool success);
-
-    /**
-    * @dev Method for admin to manually modify the staked amounts.
-    * @param historicalChallengeNumber Challenge number to modify historical staked amount record for.
-    * @param stakers List of staker addresses.
-    * @param amounts List of staked amounts to update to.
-    * @return success True if the operation completed successfully.
-    **/
-    function updateHistoricalStakedAmounts(uint32 historicalChallengeNumber, address[] calldata stakers, uint256[] calldata amounts)
-    external returns (bool success);
-
-    /**
     * @dev Called by admin to record a snapshot of the stakes for the challenge.
     * @dev A start and end index must be specified. This allows for partial recording in cases where the
     * @dev block gas limit is insufficient for recording all stakers and their staked amounts in one transaction.
@@ -183,14 +145,65 @@ interface ICompetitionV2{
     function recordStakes(uint256 startIndex, uint256 endIndex)
     external returns (bool success);
 
+
     /**
-    * @dev Called by admin to set/reset the current backedParticipant value of
-    * @dev This is particularly necessary after a contract upgrade, where the existing stakers will have their
+    MIGRATION-ONLY ADMIN WRITE METHODS
+    **/
+
+    /**
+    * @dev Method for admin to manually modify the block number where challenge was opened.
+    * @param challengeNumber Challenge number of block number being modified.
+    * @param blockNumber New block number to update to.
+    * @return success True if the operation completed successfully.
+    **/
+    function alignChallengeOpenedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
+    external returns (bool success);
+
+    /**
+    * @dev Method for admin to manually modify the block number where submission was closed.
+    * @param challengeNumber Challenge number of block number being modified.
+    * @param blockNumber New block number to update to.
+    * @return success True if the operation completed successfully.
+    **/
+    function alignSubmissionClosedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
+    external returns (bool success);
+
+
+    /**
+    * @dev Method for admin to manually modify the staker set.
+    * @param toRemove List of staker addresses to remove.
+    * @param toAdd List of staker addresses to add.
+    * @return success True if the operation completed successfully.
+    **/
+    function alignStakerSet(address[] calldata toRemove, address[] calldata toAdd)
+    external returns (bool success);
+
+    /**
+    * @dev Method for admin to manually modify the staked amounts.
+    * @param historicalChallengeNumber Challenge number to modify historical staked amount record for.
+    * @param stakers List of staker addresses.
+    * @param amounts List of staked amounts to update to.
+    * @return success True if the operation completed successfully.
+    **/
+    function alignHistoricalStakedAmounts(uint32 historicalChallengeNumber, address[] calldata stakers, uint256[] calldata amounts)
+    external returns (bool success);
+
+    /**
+    * @dev Called by admin to set the current backedParticipant value of existing stakers.
+    * @dev This is necessary after a contract upgrade, where the existing stakers will have their
     * @dev backedParticipants defaulted to the zero address, when it needs to be their own address instead.
     * @param backers List of backer addresses to set/reset.
     * @return success True if the operation completed successfully.
     **/
     function alignBacking(address[] calldata backers)
+    external returns (bool success);
+
+    /**
+    * @dev Called by admin to set the migrationCompletedBlockNumber variable to indicate that the migration has completed.
+    * @dev This locks in the migration and no further migration-only methods can be called henceforth.
+    * @return success True if the operation completed successfully.
+    **/
+    function completeMigration()
     external returns (bool success);
 
 
@@ -199,6 +212,5 @@ interface ICompetitionV2{
     **/
 
     event BackedParticipantUpdated(uint32 indexed challengeNumber, address indexed backer, address indexed backedParticipant);
-    event HistoricalStakedAmountsUpdated(uint32 indexed challengeNumber);
-
+    event MigrationCompleted(uint256 indexed blockNumber);
 }

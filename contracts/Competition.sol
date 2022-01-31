@@ -19,7 +19,18 @@ import './standard/proxy/utils/Initializable.sol';
  */
 contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Initializable, ICompetitionV2, CompetitionStorageV2 {
 
-    constructor(){}
+    /*
+    Modifier for functions to be used only for migration.
+    Migration actions should only be performed after phase 1 of a challenge,
+    when participants' stake, submission and backed participant cannot be modified.
+    */
+    modifier onlyMigration()
+    {
+        require(migrationCompletedBlockNumber == 0, "Migration has already been completed.");
+        require(_challenges[_challengeCounter].phase >= 2,
+            "Please wait for the current challenge to move into phase 2 and beyond before conducting a migration.");
+        _;
+    }
 
     function initialize(uint256 stakeThreshold_, uint256 rewardsThreshold_, address tokenAddress_)
     external
@@ -60,7 +71,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
             _updateBackedParticipant(staker, staker, address(0));
         }
 
-        require(((currentBal + amountToken) >= _stakeThreshold), "Competition - increaseStake: Your final balance must be either 0 or at least the stake threshold.");
+        require(((currentBal + amountToken) >= _stakeThreshold), "Competition - increaseStake: Your final balance must be at least the stake threshold after increasing your stake.");
 
         success = true;
 
@@ -496,24 +507,42 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         emit RemainderMovedToPool(remainder);
     }
 
-    function updateChallengeOpenedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
+    function recordStakes(uint256 startIndex, uint256 endIndex)
     external override onlyAdmin
+    returns (bool success)
+    {
+        uint32 challengeNumber = _challengeCounter;
+        require(_challenges[challengeNumber].phase >= 2, "Competition - recordStakes: Challenge in unexpected state.");
+        for (uint i = startIndex; i < endIndex; i++){
+            address staker = (EnumerableSet.at(stakerSet, i));
+            EnumerableSet.add(_historicalStakerSet[challengeNumber], staker);
+            _historicalStakeAmounts[challengeNumber][staker] = _stakes[staker];
+        }
+        success = true;
+    }
+
+    /**
+    MIGRATION-ONLY ADMIN WRITE METHODS
+    **/
+
+    function alignChallengeOpenedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
+    external override onlyAdmin onlyMigration
     returns (bool success)
     {
         challengeOpenedBlockNumbers[challengeNumber] = blockNumber;
         success = true;
     }
 
-    function updateSubmissionClosedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
-    external override onlyAdmin
+    function alignSubmissionClosedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
+    external override onlyAdmin onlyMigration
     returns (bool success)
     {
         submissionClosedBlockNumbers[challengeNumber] = blockNumber;
         success = true;
     }
 
-    function updateStakerSet(address[] calldata toRemove, address[] calldata toAdd)
-    external override onlyAdmin
+    function alignStakerSet(address[] calldata toRemove, address[] calldata toAdd)
+    external override onlyAdmin onlyMigration
     returns (bool success)
     {
         for (uint i = 0; i < toRemove.length; i++){
@@ -526,13 +555,11 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         success = true;
     }
 
-    function updateHistoricalStakedAmounts(uint32 historicalChallengeNumber, address[] calldata stakers, uint256[] calldata amounts)
-    external override onlyAdmin
+    function alignHistoricalStakedAmounts(uint32 historicalChallengeNumber, address[] calldata stakers, uint256[] calldata amounts)
+    external override onlyAdmin onlyMigration
     returns (bool success)
     {
-        require(_challenges[_challengeCounter].phase >= 2, "Competition - updateHistoricalStakedAmounts: Challenge is in unexpected state.");
         require((stakers.length == amounts.length), "Competition - updateHistoricalStakedAmounts: Number of submitters and rewards are different.");
-
         for (uint i = 0; i < stakers.length; i++){
             _historicalStakeAmounts[historicalChallengeNumber][stakers[i]] = amounts[i];
             if (amounts[i] > 0){
@@ -541,39 +568,61 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
                 EnumerableSet.remove(_historicalStakerSet[historicalChallengeNumber], stakers[i]);
             }
         }
-
-        emit HistoricalStakedAmountsUpdated(historicalChallengeNumber);
-    }
-
-    function recordStakes(uint256 startIndex, uint256 endIndex)
-    external override onlyAdmin
-    returns (bool success)
-    {
-        uint32 challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase >= 2, "Competition - closeSubmission: Challenge in unexpected state.");
-        for (uint i = startIndex; i < endIndex; i++){
-            address staker = (EnumerableSet.at(stakerSet, i));
-            EnumerableSet.add(_historicalStakerSet[challengeNumber], staker);
-            _historicalStakeAmounts[challengeNumber][staker] = _stakes[staker];
-        }
         success = true;
     }
 
     function alignBacking(address[] calldata backers)
-    external override onlyAdmin
+    external override onlyAdmin onlyMigration
     returns (bool success)
     {
         for (uint i = 0; i < backers.length; i++){
             address backedParticipant = _backed[backers[i]];
-            uint256 stake = _stakes[backers[i]];
-            if ((stake == 0) && (backedParticipant != address(0))){
-                _updateBackedParticipant(address(0), backers[i], backedParticipant);
-            }
-            else if ((stake > 0) && (backedParticipant == address(0))){
-                _updateBackedParticipant(backers[i], backers[i], backedParticipant);
+            if (backedParticipant == address(0)){
+                _updateBackedParticipant(backers[i], backers[i], _backed[backers[i]]);
             }
         }
         success = true;
+    }
+
+    function completeMigration()
+    external override onlyAdmin onlyMigration
+    returns (bool success)
+    {
+        /*
+        Sanity checks before locking in migration status.
+        */
+
+        uint256 currentBlockNumber = block.number;
+        uint32 currentChallengeNumber = _challengeCounter;
+        uint256 currentChallengeOpenedBlockNumber = challengeOpenedBlockNumbers[currentChallengeNumber];
+        uint256 currentSubmissionClosedBlockNumber = submissionClosedBlockNumbers[currentChallengeNumber];
+        address sampleStakerAddress = EnumerableSet.at(stakerSet, 10);
+
+        // Sanity check for challengeOpenedBlockNumbers.
+        require((0 < currentChallengeOpenedBlockNumber) && (currentChallengeOpenedBlockNumber < currentBlockNumber), "Competition - completeMigration: Error in currentChallengeOpenedBlockNumber values.");
+
+        // Sanity check for submissionClosedBlockNumbers.
+        require((0 < currentSubmissionClosedBlockNumber) && (currentSubmissionClosedBlockNumber < currentBlockNumber), "Competition - completeMigration: Error in currentSubmissionClosedBlockNumber values.");
+
+        // Sanity check for stakerSet.
+        require(_stakes[sampleStakerAddress] > 0, "Competition - completeMigration: Error in stakerSet addresses.");
+
+        // Sanity check for _historicalStakerSet and _historicalStakeAmounts.
+        for (uint32 historicalChallengeNumber = currentChallengeNumber - 10;
+            historicalChallengeNumber <= currentChallengeNumber;
+            historicalChallengeNumber++){
+            require(
+                _historicalStakeAmounts[historicalChallengeNumber][EnumerableSet.at(_historicalStakerSet[historicalChallengeNumber], 10)] > 0,
+                "Competition - completeMigration: Error in historical stakers and amounts values."
+            );
+        }
+
+        // Sanity check that backedParticipants of existing stakers are aligned.
+        require(_backed[sampleStakerAddress] == sampleStakerAddress, "Competition - completeMigration: Error in backedParticipants addresses.");
+
+        migrationCompletedBlockNumber = currentBlockNumber;
+        success = true;
+        emit MigrationCompleted(currentBlockNumber);
     }
 
     /**

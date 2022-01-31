@@ -1,0 +1,50 @@
+# settings for state-based tests.
+hypothesis:
+  max_examples: 5
+  stateful_step_count: 500
+  report_multiple_bugs: False
+  phases:
+    explicit: True
+    reuse: True
+    generate: True
+    target: True
+    shrink: False
+
+# set a custom mnemonic for the development network
+networks:
+  default: development
+  development:
+    persist: false
+    cmd_settings:
+      mnemonic: abcdefg
+      accounts: 20
+      port: 8228
+  mainnet-fork:
+    persist: false
+    cmd_settings:
+      mnemonic: hijklmnop
+      accounts: 20
+      port: 8383
+  polygon-fork:
+    persist: false
+    cmd_settings:
+      mnemonic: qrstuvwxyz
+      accounts: 20
+      port: 8918
+      fork: 'Fill in api endpoint to a Polygon archive node here.'
+      chain_id: 137
+
+compiler:
+  evm_version: istanbul
+  solc:
+    version: 0.8.4
+    optimizer:
+      enabled: true
+      runs: 200
+    remappings: null
+  vyper:
+    version: null
+
+
+# enable output of development artifacts to load with react
+dev_deployment_artifacts: true

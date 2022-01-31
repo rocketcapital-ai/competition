@@ -11,6 +11,7 @@ contract CompetitionStorageV2{
     // "backers" will be used to refer to the set of users backing a participant.
     // "backed" will be used to refer to the participant that a user is backing.
     // one user (ie. one address) can only back one participant.
+    uint256 public migrationCompletedBlockNumber;
     EnumerableSet.AddressSet stakerSet;
     mapping(address => EnumerableSet.AddressSet) internal _backers;
     mapping(address => address) internal _backed;
