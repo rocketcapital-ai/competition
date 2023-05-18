@@ -1,4 +1,4 @@
-pragma solidity 0.8.4;
+pragma solidity ^0.8.4;
 
 // SPDX-License-Identifier: MIT
 
@@ -6,9 +6,8 @@ import './../interfaces/ICompetition.sol';
 import './../interfaces/ICompetitionV2.sol';
 import './../interfaces/IToken.sol';
 import './CompetitionStorage.sol';
-import './CompetitionStorageV2.sol';
 import './AccessControlRci.sol';
-import './standard/proxy/utils/Initializable.sol';
+import "OpenZeppelin/openzeppelin-contracts@4.8.0/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @title RCI Tournament(Competition) Contract
@@ -17,34 +16,19 @@ import './standard/proxy/utils/Initializable.sol';
  * @dev IPFS hash format: Hash Identifier (2 bytes), Actual Hash (May eventually take on other formats but currently 32 bytes)
  *
  */
-contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Initializable, ICompetitionV2, CompetitionStorageV2 {
-
-    /*
-    Modifier for functions to be used only for migration.
-    Migration actions should only be performed after phase 1 of a challenge,
-    when participants' stake, submission and backed participant cannot be modified.
-    */
-    modifier onlyMigration()
-    {
-        require(migrationCompletedBlockNumber == 0, "Migration has already been completed.");
-        require(_challenges[_challengeCounter].phase >= 2,
-            "Please wait for the current challenge to move into phase 2 and beyond before conducting a migration.");
-        _;
-    }
+contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Initializable, ICompetitionV2 {
 
     function initialize(uint256 stakeThreshold_, uint256 rewardsThreshold_, address tokenAddress_)
     external
     initializer
     {
         require(tokenAddress_ != address(0), "No token address found.");
-        _initializeRciAdmin();
+        _initializeRciAdmin(msg.sender);
         _stakeThreshold = stakeThreshold_;
         _rewardsThreshold = rewardsThreshold_;
         _token = IToken(tokenAddress_);
         _challengeCounter = 0;
         _challenges[_challengeCounter].phase = 4;
-        _challengeRewardsPercentageInWei = 20e16;
-        _tournamentRewardsPercentageInWei = 60e16;
     }
 
     /**
@@ -56,9 +40,10 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-        require(msg.sender == address(_token), "Competition - increaseStake: Please call this function via the token contract.");
-        require(_challenges[challengeNumber].phase == 1, "Competition - increaseStake: Please wait for the staking period to unlock before modifying your stake.");
-        require(amountToken > 0, "Competition - increaseStake: Amount to increase by must be greater than 0");
+        require(msg.sender == address(_token), "TKCL");
+        require(_challenges[challengeNumber].phase == 1, "STUK");
+        // allow for amountToken = 0 so that `stakeAndSubmit` can be called with the same stake.
+        // users might want to set their stakes to the same amount while changing their submission.
 
         uint256 currentBal = _stakes[staker];
 
@@ -67,11 +52,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
 
         EnumerableSet.add(stakerSet, staker);
 
-        if (_backed[staker] == address(0)) {
-            _updateBackedParticipant(staker, staker, address(0));
-        }
-
-        require(((currentBal + amountToken) >= _stakeThreshold), "Competition - increaseStake: Your final balance must be at least the stake threshold after increasing your stake.");
+        require(((currentBal + amountToken) >= _stakeThreshold), "MIN");
 
         success = true;
 
@@ -83,26 +64,22 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-        require(msg.sender == address(_token), "Competition - decreaseStake: Please call this function via the token contract.");
-        require(_challenges[_challengeCounter].phase == 1, "Competition - decreaseStake: Please wait for the staking period to unlock before modifying your stake.");
-        require(amountToken > 0, "Competition - increaseStake: Amount to decrease by must be greater than 0");
+        require(msg.sender == address(_token), "TKCL");
+        require(_challenges[_challengeCounter].phase == 1, "STUK");
+        // allow for amountToken = 0 so that `stakeAndSubmit` can be called with the same stake.
+        // users might want to set their stakes to the same amount while changing their submission.
 
         uint256 currentBal = _stakes[staker];
-        require(amountToken <= currentBal, "Competition - decreaseStake: Insufficient funds for withdrawal.");
+        require(amountToken <= currentBal, "Insufficient funds.");
 
         require(((currentBal - amountToken) == 0) ||
-            ((currentBal - amountToken) >= _stakeThreshold), "Competition - decreaseStake: Your final balance must be either 0 or at least the stake threshold.");
+            ((currentBal - amountToken) >= _stakeThreshold), "MIN");
 
-        address oldBackedParticipant = _backed[staker];
         bool submissionExists = _challenges[challengeNumber].submitterInfo[staker].submission != bytes32(0);
-        bool backingOthers = (oldBackedParticipant != staker) && (oldBackedParticipant != address(0));
 
-        if (currentBal == amountToken){
-            require(!(submissionExists || backingOthers), "Competition - decreaseStake: You may not lower your stake below the threshold while you have an existing submission or are backing other participants.");
+        if ((currentBal - amountToken) == 0){
+            require(!submissionExists, "SBBK");
             EnumerableSet.remove(stakerSet, staker);
-            if (oldBackedParticipant != address(0)){
-                _updateBackedParticipant(address(0), staker, oldBackedParticipant);
-            }
         }
 
         _stakes[staker] = currentBal - amountToken;
@@ -112,81 +89,70 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         emit StakeDecreased(staker, amountToken);
     }
 
-    function updateBackedParticipant(address backedParticipant)
-    external override
-    returns (bool success)
-    {
-        require(backedParticipant != address(0), "Competition - updateBackedParticipant: Not allowed to back the 0 address.");
-        require(_challenges[_challengeCounter].phase == 1, "Competition - updateBackedParticipant: You may only modify your backing details when the submission window is open.");
-        address oldBackedParticipant = _backed[msg.sender];
-        success = _updateBackedParticipant(backedParticipant, msg.sender, oldBackedParticipant);
-    }
+//    function submitNewPredictions(bytes32 submissionHash)
+//    external override
+//    returns (uint32 challengeNumber)
+//    {
+//        uint256 currentBal = _stakes[msg.sender];
+//        require(currentBal >= _stakeThreshold, "STBL");
+//        challengeNumber = _updateSubmission(bytes32(0), submissionHash);
+//        EnumerableSet.add(_challenges[challengeNumber].submitters, msg.sender);
+////        _challenges[challengeNumber].submitterInfo[msg.sender].staked = currentBal;
+//    }
 
-    function
-    _updateBackedParticipant(address backedParticipant, address backer, address oldBackedParticipant)
-    private
-    returns (bool success)
-    {
-        uint32 challengeNumber = _challengeCounter;
-        require(_stakes[backer] >= _stakeThreshold, "Competition - updateBackedParticipant: Please stake at least the backing minimum amount before selecting a participant to back.");
-        require(oldBackedParticipant != backedParticipant, "Competition - updateBackedParticipant: You are already backing this participant.");
+//    function updateSubmission(bytes32 oldSubmissionHash, bytes32 newSubmissionHash)
+//    external override
+//    returns (uint32 challengeNumber)
+//    {
+//        require(oldSubmissionHash != bytes32(0), "NOSB");
+//        challengeNumber = _updateSubmission(oldSubmissionHash, newSubmissionHash);
+//
+//        if (newSubmissionHash == bytes32(0)){
+//            EnumerableSet.remove(_challenges[challengeNumber].submitters, msg.sender);
+////            _challenges[challengeNumber].submitterInfo[msg.sender].staked = 0;
+//        }
+//    }
 
-        // Set the backer's backed participant to be `backedParticipant`.
-        _backed[backer] = backedParticipant;
-
-        // If the backer is already backing a participant, remove the backer from the old backedParticipant's set of backers.
-        EnumerableSet.remove(_backers[oldBackedParticipant], backer);
-
-        // Add the backer to the new backedParticipant's set of backers.
-        if (backedParticipant != address(0)){
-            EnumerableSet.add(_backers[backedParticipant], backer);
-        }
-
-        success = true;
-        emit BackedParticipantUpdated(challengeNumber, backer, backedParticipant);
-    }
-
-    function submitNewPredictions(bytes32 submissionHash)
+    function submit(address staker, bytes32 submissionHash)
     external override
     returns (uint32 challengeNumber)
     {
-        uint256 currentBal = _stakes[msg.sender];
-        require(currentBal >= _stakeThreshold, "Competition - submitNewPredictions: Stake is below threshold.");
-        challengeNumber = _updateSubmission(bytes32(0), submissionHash);
-        EnumerableSet.add(_challenges[challengeNumber].submitters, msg.sender);
-    }
+        require(msg.sender == address(_token), "TKCL");
+        challengeNumber = _updateSubmission(staker, submissionHash);
 
-    function updateSubmission(bytes32 oldSubmissionHash, bytes32 newSubmissionHash)
-    external override
-    returns (uint32 challengeNumber)
-    {
-        require(oldSubmissionHash != bytes32(0), "Competition - updateSubmission: Must have pre-existing submission.");
-        challengeNumber = _updateSubmission(oldSubmissionHash, newSubmissionHash);
-
-        if (newSubmissionHash == bytes32(0)){
-            EnumerableSet.remove(_challenges[challengeNumber].submitters, msg.sender);
+        if (submissionHash == bytes32(0)){
+            EnumerableSet.remove(_challenges[challengeNumber].submitters, staker);
+        } else {
+            EnumerableSet.add(_challenges[challengeNumber].submitters, staker);
         }
     }
 
-    function _updateSubmission(bytes32 oldSubmissionHash, bytes32 newSubmissionHash)
+    function _updateSubmission(address staker, bytes32 newSubmissionHash)
     private
     returns (uint32 challengeNumber)
     {
         challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase == 1, "Competition - updateSubmission: Not available for submissions.");
-        require(oldSubmissionHash != newSubmissionHash, "Competition - updateSubmission: Cannot update with the same hash as before.");
-        require(_challenges[challengeNumber].submitterInfo[msg.sender].submission == oldSubmissionHash,
-                "Competition - updateSubmission: Clash in existing submission hash.");
-        _challenges[challengeNumber].submitterInfo[msg.sender].submission = newSubmissionHash;
+        require(_challenges[challengeNumber].phase == 1, "WGPH");
+        _challenges[challengeNumber].submitterInfo[staker].submission = newSubmissionHash;
 
-        emit SubmissionUpdated(challengeNumber, msg.sender, newSubmissionHash);
+        emit SubmissionUpdated(challengeNumber, staker, newSubmissionHash);
     }
 
     /**
-    ORGANIZER WRITE METHODS
+    ADMIN WRITE METHODS
     **/
+    function updateVault(address vault)
+    external override onlyRole(RCI_CHILD_ADMIN)
+    returns (bool success)
+    {
+        _vault = vault;
+        success = true;
+
+        emit VaultUpdated(vault);
+    }
+
     function updateMessage(string calldata newMessage)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         _message = newMessage;
@@ -196,7 +162,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function updateDeadlines(uint32 challengeNumber, uint256 index, uint256 timestamp)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         success = _updateDeadlines(challengeNumber, index, timestamp);
@@ -211,7 +177,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function updateRewardsThreshold(uint256 newThreshold)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         _rewardsThreshold = newThreshold;
@@ -221,7 +187,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function updateStakeThreshold(uint256 newStakeThreshold)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         _stakeThreshold = newStakeThreshold;
@@ -230,29 +196,8 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         emit StakeThresholdUpdated(newStakeThreshold);
     }
 
-    function updateChallengeRewardsPercentageInWei(uint256 newPercentage)
-    external override onlyAdmin
-    returns (bool success)
-    {
-        _challengeRewardsPercentageInWei = newPercentage;
-        success = true;
-
-        emit ChallengeRewardsPercentageInWeiUpdated(newPercentage);
-    }
-
-    function updateTournamentRewardsPercentageInWei(uint256 newPercentage)
-    external override onlyAdmin
-    returns (bool success)
-    {
-        _tournamentRewardsPercentageInWei = newPercentage;
-        success = true;
-
-        emit TournamentRewardsPercentageInWeiUpdated(newPercentage);
-    }
-
-
     function updatePrivateKey(uint32 challengeNumber, bytes32 newKeyHash)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         _challenges[challengeNumber].privateKey = newKeyHash;
@@ -262,12 +207,12 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function openChallenge(bytes32 datasetHash, bytes32 keyHash, uint256 submissionCloseDeadline, uint256 nextChallengeDeadline)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase == 4, "Competition - openChallenge: Previous phase is incomplete.");
-        require(_competitionPool >= _rewardsThreshold, "Competiton - openChallenge: Not enough rewards.");
+        require(_challenges[challengeNumber].phase == 4, "WGPH");
+        require(_competitionPool >= _rewardsThreshold, "NORW");
 
         challengeNumber++;
 
@@ -277,37 +222,31 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         _updateDataset(challengeNumber, bytes32(0), datasetHash);
         _updateKey(challengeNumber, bytes32(0), keyHash);
 
-        _currentChallengeRewardsBudget = _competitionPool * _challengeRewardsPercentageInWei/(1e18);
-        _currentTournamentRewardsBudget = _competitionPool * _tournamentRewardsPercentageInWei/(1e18);
-        _currentStakingRewardsBudget = _competitionPool - _currentChallengeRewardsBudget - _currentTournamentRewardsBudget;
-
         _updateDeadlines(challengeNumber, 0, submissionCloseDeadline);
         _updateDeadlines(challengeNumber, 1, nextChallengeDeadline);
 
         challengeOpenedBlockNumbers[challengeNumber] = block.number;
-
         success = true;
-
         emit ChallengeOpened(challengeNumber);
     }
 
     function updateDataset(bytes32 oldDatasetHash, bytes32 newDatasetHash)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase == 1, "Competition - updateDataset: Challenge is closed.");
-        require(oldDatasetHash != bytes32(0), "Competition - updateDataset: Must have pre-existing dataset.");
+//        require(_challenges[challengeNumber].phase == 1, "CHCL");
+//        require(oldDatasetHash != bytes32(0), "No dataset.");
         success = _updateDataset(challengeNumber, oldDatasetHash, newDatasetHash);
     }
 
     function updateKey(bytes32 oldKeyHash, bytes32 newKeyHash)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase == 1, "Competition - updateKey: Challenge is closed.");
-        require(oldKeyHash != bytes32(0), "Competition - updateKey: Must have pre-existing key.");
+//        require(_challenges[challengeNumber].phase == 1, "CHCL");
+//        require(oldKeyHash != bytes32(0), "No key.");
         success = _updateKey(challengeNumber, oldKeyHash, newKeyHash);
     }
 
@@ -315,8 +254,8 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     private
     returns (bool success)
     {
-        require(oldDatasetHash != newDatasetHash, "Competition - updateDataset: Cannot update with the same hash as before.");
-        require(_challenges[challengeNumber].dataset == oldDatasetHash, "Competition - updateDataset: Incorrect old dataset reference.");
+        require(oldDatasetHash != newDatasetHash, "HHST");
+        require(_challenges[challengeNumber].dataset == oldDatasetHash, "HHER");
         _challenges[challengeNumber].dataset = newDatasetHash;
         success = true;
 
@@ -327,8 +266,8 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     private
     returns (bool success)
     {
-        require(oldKeyHash != newKeyHash, "Competition - _updateKey: Cannot update with the same hash as before.");
-        require(_challenges[challengeNumber].key == oldKeyHash, "Competition - _updateKey: Incorrect old key reference.");
+        require(oldKeyHash != newKeyHash, "HHST");
+        require(_challenges[challengeNumber].key == oldKeyHash, "HHER");
         _challenges[challengeNumber].key = newKeyHash;
         success = true;
 
@@ -336,11 +275,11 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function closeSubmission()
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase == 1, "Competition - closeSubmission: Challenge in unexpected state.");
+        require(_challenges[challengeNumber].phase == 1, "PH1");
         _challenges[challengeNumber].phase = 2;
         submissionClosedBlockNumbers[challengeNumber] = block.number;
         success = true;
@@ -349,17 +288,17 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function submitResults(bytes32 resultsHash)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         success = _updateResults(bytes32(0), resultsHash);
     }
 
     function updateResults(bytes32 oldResultsHash, bytes32 newResultsHash)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
-        require(oldResultsHash != bytes32(0), "Competition - updateResults: Must have pre-existing results.");
+        require(oldResultsHash != bytes32(0), "NORS");
         success = _updateResults(oldResultsHash, newResultsHash);
     }
 
@@ -367,32 +306,41 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     private
     returns (bool success)
     {
-        require(oldResultsHash != newResultsHash, "Competition - updateResults: Cannot update with the same hash as before.");
+        require(oldResultsHash != newResultsHash, "HHST");
         uint32 challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase >= 3, "Competition - updateResults: Challenge in unexpected state.");
-        require(_challenges[challengeNumber].results == oldResultsHash, "Competition - updateResults: Clash in existing results hash.");
+        require(_challenges[challengeNumber].phase >= 3, "WGPH");
+        require(_challenges[challengeNumber].results == oldResultsHash, "HHER");
         _challenges[challengeNumber].results = newResultsHash;
         success = true;
 
         emit ResultsUpdated(challengeNumber, oldResultsHash, newResultsHash);
     }
 
-    function payRewards(address[] calldata submitters, uint256[] calldata stakingRewards, uint256[] calldata challengeRewards, uint256[] calldata tournamentRewards)
-    external override onlyAdmin
+    function payRewards(address[] calldata submitters, uint256[] calldata stakingRewards,
+                        uint256[] calldata challengeRewards, uint256[] calldata tournamentRewards)
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         success = _payRewards(_challengeCounter, submitters, stakingRewards, challengeRewards, tournamentRewards);
     }
 
-    function _payRewards(uint32 challengeNumber, address[] calldata submitters, uint256[] calldata stakingRewards, uint256[] calldata challengeRewards, uint256[] calldata tournamentRewards)
+    function burn(address[] calldata submitters, uint256[] calldata burnAmounts)
+    external override onlyRole(RCI_CHILD_ADMIN)
+    returns (bool success)
+    {
+        success = _burn(_challengeCounter, submitters, burnAmounts);
+    }
+
+    function _payRewards(uint32 challengeNumber, address[] calldata submitters, uint256[] calldata stakingRewards,
+                            uint256[] calldata challengeRewards, uint256[] calldata tournamentRewards)
     private
     returns (bool success)
     {
-        require(_challenges[challengeNumber].phase >= 3, "Competition - payRewards: Challenge is in unexpected state.");
+        require(_challenges[challengeNumber].phase == 3, "WGPH");
         require((submitters.length == stakingRewards.length) &&
             (submitters.length == challengeRewards.length) &&
             (submitters.length == tournamentRewards.length),
-            "Competition - payRewards: Number of submitters and rewards are different.");
+            "ARER");
 
         uint256 totalStakingAmount;
         uint256 totalChallengeAmount;
@@ -408,11 +356,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
             _paySingleAddress(challengeNumber, submitters[i], stakingRewards[i], challengeRewards[i], tournamentRewards[i]);
         }
 
-        // allow for reverting on underflow
-        _currentStakingRewardsBudget -= totalStakingAmount;
-        _currentChallengeRewardsBudget -= totalChallengeAmount;
-        _currentTournamentRewardsBudget -= totalTournamentAmount;
-
         _competitionPool -= totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
         _currentTotalStaked += totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
         success = true;
@@ -420,7 +363,32 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         _logRewardsPaid(challengeNumber, totalStakingAmount, totalChallengeAmount, totalTournamentAmount);
     }
 
-    function _paySingleAddress(uint32 challengeNumber, address submitter, uint256 stakingReward, uint256 challengeReward, uint256 tournamentReward)
+    function _burn(uint32 challengeNumber, address[] calldata submitters, uint256[] calldata burnAmounts)
+    private
+    returns (bool success)
+    {
+        require(_challenges[challengeNumber].phase == 3, "WGPH");
+        require((submitters.length == burnAmounts.length), "WGSL");
+
+        uint256 totalBurnAmount;
+
+        for (uint i = 0; i < submitters.length; i++)
+        {
+            // read directly from the list since the list is already in memory(calldata), and to avoid stack too deep errors.
+            totalBurnAmount += burnAmounts[i];
+            _burnSingleAddress(challengeNumber, submitters[i], burnAmounts[i]);
+        }
+
+        // allow for reverting on underflow
+        _burnedAmount += totalBurnAmount;
+        _currentTotalStaked -= totalBurnAmount;
+        success = true;
+
+//        _logAmountsBurned(challengeNumber, totalBurnAmount);
+    }
+
+    function _paySingleAddress(uint32 challengeNumber, address submitter, uint256 stakingReward,
+                                uint256 challengeReward, uint256 tournamentReward)
     private
     {
         _stakes[submitter] += stakingReward + challengeReward + tournamentReward;
@@ -440,6 +408,23 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         emit RewardsPayment(challengeNumber, submitter, stakingReward, challengeReward, tournamentReward);
     }
 
+
+    function _burnSingleAddress(uint32 challengeNumber, address submitter, uint256 burnAmount)
+    private
+    {
+//        require(_stakes[submitter] >= burnAmount, 'Underflow error.');
+        _stakes[submitter] -= burnAmount;
+        uint256 alreadyBurned = _challenges[challengeNumber].submitterInfo[submitter].tokensBurned;
+        if (burnAmount > 0){
+            _challenges[challengeNumber].submitterInfo[submitter].tokensBurned = burnAmount + alreadyBurned;
+        }
+
+        emit Burned(challengeNumber, submitter, burnAmount);
+    }
+
+    // reset burn and payments
+
+
     function _logRewardsPaid(uint32 challengeNumber, uint256 totalStakingAmount, uint256 totalChallengeAmount, uint256 totalTournamentAmount)
     private
     {
@@ -447,11 +432,12 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function updateChallengeAndTournamentScores(uint32 challengeNumber, address[] calldata participants, uint256[] calldata challengeScores, uint256[] calldata tournamentScores)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
-        require(_challenges[challengeNumber].phase >= 3, "Competition - updateChallengeAndTournamentScores: Challenge is in unexpected state.");
-        require((participants.length == challengeScores.length) && (participants.length == tournamentScores.length), "Competition - updateChallengeAndTournamentScores: Number of participants and scores are different.");
+        require(_challenges[challengeNumber].phase >= 3, "WGPH");
+        require((participants.length == challengeScores.length) && (participants.length == tournamentScores.length),
+            "ARER");
 
         for (uint i = 0; i < participants.length; i++)
         {
@@ -466,12 +452,13 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         emit ChallengeAndTournamentScoresUpdated(challengeNumber);
     }
 
-    function updateInformationBatch(uint32 challengeNumber, address[] calldata participants, uint256 itemNumber, uint[] calldata values)
-    external override onlyAdmin
+    function updateInformationBatch(uint32 challengeNumber, address[] calldata participants,
+                                    uint256 itemNumber, uint[] calldata values)
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
-        require(_challenges[challengeNumber].phase >= 3, "Competition - updateInformationBatch: Challenge is in unexpected state.");
-        require(participants.length == values.length, "Competition - updateInformationBatch: Number of participants and values are different.");
+        require(_challenges[challengeNumber].phase >= 3, "WGPH");
+        require(participants.length == values.length, "ARER");
 
         for (uint i = 0; i < participants.length; i++)
         {
@@ -483,24 +470,26 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function advanceToPhase(uint8 phase)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-        require((2 < phase) && (phase < 5), "Competition - advanceToPhase: You may only use this method for advancing to phases 3 or 4." );
-        require((phase-1) == _challenges[challengeNumber].phase, "Competition - advanceToPhase: You may only advance to the next phase.");
+        require((2 < phase) && (phase < 5)
+                    && ((phase-1) == _challenges[challengeNumber].phase),
+            "WGPH" );
+//        require(, "WGPH");
         _challenges[challengeNumber].phase = phase;
 
         success = true;
     }
 
     function moveRemainderToPool()
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
-        require(_challenges[_challengeCounter].phase == 4, "Competition - moveRemainderToPool: PLease wait for the challenge to complete before sponsoring.");
+        require(_challenges[_challengeCounter].phase == 4, "WGPH");
         uint256 remainder = getRemainder();
-        require(remainder > 0, "Competition - moveRemainderToPool: No remainder to move.");
+        require(remainder > 0, "No remainder.");
         _competitionPool += remainder;
         success = true;
 
@@ -508,121 +497,57 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     }
 
     function recordStakes(uint256 startIndex, uint256 endIndex)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase >= 2, "Competition - recordStakes: Challenge in unexpected state.");
+        require(_challenges[challengeNumber].phase >= 2, "WGPH");
         for (uint i = startIndex; i < endIndex; i++){
             address staker = (EnumerableSet.at(stakerSet, i));
-            EnumerableSet.add(_historicalStakerSet[challengeNumber], staker);
-            _historicalStakeAmounts[challengeNumber][staker] = _stakes[staker];
-        }
-        success = true;
-    }
-
-    /**
-    MIGRATION-ONLY ADMIN WRITE METHODS
-    **/
-
-    function alignChallengeOpenedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
-    external override onlyAdmin onlyMigration
-    returns (bool success)
-    {
-        challengeOpenedBlockNumbers[challengeNumber] = blockNumber;
-        success = true;
-    }
-
-    function alignSubmissionClosedBlockNumbers(uint32 challengeNumber, uint256 blockNumber)
-    external override onlyAdmin onlyMigration
-    returns (bool success)
-    {
-        submissionClosedBlockNumbers[challengeNumber] = blockNumber;
-        success = true;
-    }
-
-    function alignStakerSet(address[] calldata toRemove, address[] calldata toAdd)
-    external override onlyAdmin onlyMigration
-    returns (bool success)
-    {
-        for (uint i = 0; i < toRemove.length; i++){
-            EnumerableSet.remove(stakerSet, toRemove[i]);
-        }
-
-        for (uint i = 0; i < toAdd.length; i++){
-            EnumerableSet.add(stakerSet, toAdd[i]);
-        }
-        success = true;
-    }
-
-    function alignHistoricalStakedAmounts(uint32 historicalChallengeNumber, address[] calldata stakers, uint256[] calldata amounts)
-    external override onlyAdmin onlyMigration
-    returns (bool success)
-    {
-        require((stakers.length == amounts.length), "Competition - updateHistoricalStakedAmounts: Number of submitters and rewards are different.");
-        for (uint i = 0; i < stakers.length; i++){
-            _historicalStakeAmounts[historicalChallengeNumber][stakers[i]] = amounts[i];
-            if (amounts[i] > 0){
-                EnumerableSet.add(_historicalStakerSet[historicalChallengeNumber], stakers[i]);
-            } else {
-                EnumerableSet.remove(_historicalStakerSet[historicalChallengeNumber], stakers[i]);
+            uint256 stakeAmt = _stakes[staker];
+            if (!EnumerableSet.contains(_historicalStakerSet[challengeNumber], staker)) {
+                EnumerableSet.add(_historicalStakerSet[challengeNumber], staker);
+                _historicalTotalStake[_challengeCounter] += stakeAmt;
             }
+            _historicalStakeAmounts[challengeNumber][staker] = stakeAmt;
         }
         success = true;
     }
 
-    function alignBacking(address[] calldata backers)
-    external override onlyAdmin onlyMigration
+    function moveBurnedToPool(uint256 amount)
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
-        for (uint i = 0; i < backers.length; i++){
-            address backedParticipant = _backed[backers[i]];
-            if (backedParticipant == address(0)){
-                _updateBackedParticipant(backers[i], backers[i], _backed[backers[i]]);
-            }
-        }
+        require(_challenges[_challengeCounter].phase == 4, "WGPH");
+        require(amount <= _burnedAmount, "Not enough.");
+        _burnedAmount -= amount;
+        _competitionPool += amount;
         success = true;
+
+        emit BurnedMoved(address(this), amount);
     }
 
-    function completeMigration()
-    external override onlyAdmin onlyMigration
+    function moveBurnedOut(uint256 amount)
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
-        /*
-        Sanity checks before locking in migration status.
-        */
-
-        uint256 currentBlockNumber = block.number;
-        uint32 currentChallengeNumber = _challengeCounter;
-        uint256 currentChallengeOpenedBlockNumber = challengeOpenedBlockNumbers[currentChallengeNumber];
-        uint256 currentSubmissionClosedBlockNumber = submissionClosedBlockNumbers[currentChallengeNumber];
-        address sampleStakerAddress = EnumerableSet.at(stakerSet, 10);
-
-        // Sanity check for challengeOpenedBlockNumbers.
-        require((0 < currentChallengeOpenedBlockNumber) && (currentChallengeOpenedBlockNumber < currentBlockNumber), "Competition - completeMigration: Error in currentChallengeOpenedBlockNumber values.");
-
-        // Sanity check for submissionClosedBlockNumbers.
-        require((0 < currentSubmissionClosedBlockNumber) && (currentSubmissionClosedBlockNumber < currentBlockNumber), "Competition - completeMigration: Error in currentSubmissionClosedBlockNumber values.");
-
-        // Sanity check for stakerSet.
-        require(_stakes[sampleStakerAddress] > 0, "Competition - completeMigration: Error in stakerSet addresses.");
-
-        // Sanity check for _historicalStakerSet and _historicalStakeAmounts.
-        for (uint32 historicalChallengeNumber = currentChallengeNumber - 10;
-            historicalChallengeNumber <= currentChallengeNumber;
-            historicalChallengeNumber++){
-            require(
-                _historicalStakeAmounts[historicalChallengeNumber][EnumerableSet.at(_historicalStakerSet[historicalChallengeNumber], 10)] > 0,
-                "Competition - completeMigration: Error in historical stakers and amounts values."
-            );
-        }
-
-        // Sanity check that backedParticipants of existing stakers are aligned.
-        require(_backed[sampleStakerAddress] == sampleStakerAddress, "Competition - completeMigration: Error in backedParticipants addresses.");
-
-        migrationCompletedBlockNumber = currentBlockNumber;
+        require(_challenges[_challengeCounter].phase == 4, "WGPH");
+        require(amount <= _burnedAmount, "Not enough.");
+        _burnedAmount -= amount;
+        _token.transfer(_burnRecipient, amount);
         success = true;
-        emit MigrationCompleted(currentBlockNumber);
+
+        emit BurnedMoved(_burnRecipient, amount);
+    }
+
+    function updateBurnRecipient(address newBurnRecipient)
+    external override onlyRole(RCI_CHILD_ADMIN)
+    returns (bool success)
+    {
+        require(newBurnRecipient != address(this), "MBTP");
+        _burnRecipient = newBurnRecipient;
+        emit BurnRecipientUpdated(newBurnRecipient);
+        success = true;
     }
 
     /**
@@ -648,41 +573,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     returns (uint256 currentTotalStaked)
     {
         currentTotalStaked = _currentTotalStaked;
-    }
-
-    function getCurrentStakingRewardsBudget()
-    view external override
-    returns (uint256 currentStakingRewardsBudget)
-    {
-        currentStakingRewardsBudget = _currentStakingRewardsBudget;
-    }
-
-    function getCurrentChallengeRewardsBudget()
-    view external override
-    returns (uint256 currentChallengeRewardsBudget)
-    {
-        currentChallengeRewardsBudget = _currentChallengeRewardsBudget;
-    }
-
-    function getCurrentTournamentRewardsBudget()
-    view external override
-    returns (uint256 currentTournamentRewardsBudget)
-    {
-        currentTournamentRewardsBudget = _currentTournamentRewardsBudget;
-    }
-
-    function getChallengeRewardsPercentageInWei()
-    view external override
-    returns (uint256 challengeRewardsPercentageInWei)
-    {
-        challengeRewardsPercentageInWei = _challengeRewardsPercentageInWei;
-    }
-
-    function getTournamentRewardsPercentageInWei()
-    view external override
-    returns (uint256 tournamentRewardsPercentageInWei)
-    {
-        tournamentRewardsPercentageInWei = _tournamentRewardsPercentageInWei;
     }
 
     function getLatestChallengeNumber()
@@ -777,13 +667,12 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         submissionHash = _challenges[challengeNumber].submitterInfo[participant].submission;
     }
 
-    // This is no longer in use. Keeping the function so that the data layout will be the same in ICompetition.
     function getStakedAmountForChallenge(uint32 challengeNumber, address participant)
     view external override
     returns (uint256 staked)
     {
 //        staked = _challenges[challengeNumber].submitterInfo[participant].staked;
-        staked = 0;
+        staked = _historicalStakeAmounts[challengeNumber][participant];
     }
 
     function getStakingRewards(uint32 challengeNumber, address participant)
@@ -805,16 +694,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     returns (uint256 tournamentRewards)
     {
         tournamentRewards = _challenges[challengeNumber].submitterInfo[participant].tournamentRewards;
-    }
-
-    function getOverallRewards(uint32 challengeNumber, address participant)
-    view external override
-    returns (uint256 overallRewards)
-    {
-        overallRewards =
-        _challenges[challengeNumber].submitterInfo[participant].stakingRewards
-        + _challenges[challengeNumber].submitterInfo[participant].challengeRewards
-        + _challenges[challengeNumber].submitterInfo[participant].tournamentRewards;
     }
 
     function getChallengeScores(uint32 challengeNumber, address participant)
@@ -849,7 +728,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     view public override
     returns (uint256 remainder)
     {
-        remainder = _token.balanceOf(address(this)) - _currentTotalStaked - _competitionPool;
+        remainder = _token.balanceOf(address(this)) - _currentTotalStaked - _competitionPool - _burnedAmount;
     }
 
     function getMessage()
@@ -902,46 +781,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         return stakeAmountList;
     }
 
-    function getBackedParticipant(address backer)
-    view external override
-    returns (address backedParticipant)
-    {
-        backedParticipant = _backed[backer];
-    }
-
-    function getBackersCounter(address backedParticipant)
-    view public override
-    returns (uint256 backersCounter)
-    {
-        backersCounter = EnumerableSet.length(_backers[backedParticipant]);
-    }
-
-    function getBackers(address backedParticipant, uint256 startIndex, uint256 endIndex)
-    view public override
-    returns (address[] memory)
-    {
-        EnumerableSet.AddressSet storage backersSet = _backers[backedParticipant];
-        return _getListFromSet(backersSet, startIndex, endIndex);
-    }
-
-    function getAllBackers(address backedParticipant)
-    view external override
-    returns (address[] memory)
-    {
-        return getBackers(backedParticipant, 0, getBackersCounter(backedParticipant));
-    }
-
-    function getBackingTotal(address backedParticipant)
-    view external override
-    returns (uint256 totalAmount)
-    {
-        totalAmount = 0;
-        EnumerableSet.AddressSet storage backersSet = _backers[backedParticipant];
-        for (uint i = 0; i < getBackersCounter(backedParticipant); i++){
-            totalAmount += _stakes[EnumerableSet.at(backersSet, i)];
-        }
-    }
-
     function getStakersCounter()
     view public override
     returns (uint256 stakersCounter)
@@ -963,6 +802,42 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         return getStakers(0, getStakersCounter());
     }
 
+
+    function getBurnRecipient()
+    view external override
+    returns (address burnRecipient)
+    {
+        burnRecipient = _burnRecipient;
+    }
+
+    function getTotalBurnedAmount()
+    view external override
+    returns (uint256 burnedAmount)
+    {
+        burnedAmount = _burnedAmount;
+    }
+
+    function getBurnedAmount(uint32 challengeNumber, address participant)
+    view external override
+    returns (uint256 burnedAmount)
+    {
+        burnedAmount = _challenges[challengeNumber].submitterInfo[participant].tokensBurned;
+    }
+
+    function getHistoricalTotalStaked(uint32 challengeNumber)
+    view external override
+    returns (uint256 historicalTotalStakedAmt)
+    {
+        historicalTotalStakedAmt = _historicalTotalStake[challengeNumber];
+    }
+
+    function getVault()
+    view external override
+    returns (address vaultAddress)
+    {
+        vaultAddress = _vault;
+    }
+
     /**
     METHODS CALLABLE BY BOTH ADMIN AND PARTICIPANTS.
     **/
@@ -971,7 +846,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     external override
     returns (bool success)
     {
-        require(_challenges[_challengeCounter].phase == 4, "Competition - sponsor: PLease wait for the challenge to complete before sponsoring.");
+//        require(_challenges[_challengeCounter].phase >= 3, "WGPH");
         uint256 currentCompPoolAmt = _competitionPool;
         _competitionPool = currentCompPoolAmt + amountToken;
         success = _token.transferFrom(msg.sender, address(this), amountToken);

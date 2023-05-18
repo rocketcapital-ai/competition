@@ -1,16 +1,8 @@
-pragma solidity 0.8.4;
+pragma solidity ^0.8.4;
 
 // SPDX-License-Identifier: MIT
 
 interface IRegistry{
-
-    function registerNewCompetition(string calldata competitionName, address competitionAddress, bytes32 rulesLocation) external;
-    
-    function toggleCompetitionActive(string calldata competitionName) external;
-
-    function changeCompetitionRulesLocation(string calldata competitionName, bytes32 newLocation) external;
-    
-    function changeTokenAddress(address newAddress) external;
 
     function registerNewExtension(string calldata extensionName,address extensionAddress, bytes32 informationLocation) external;
 
@@ -24,11 +16,9 @@ interface IRegistry{
 
     function getCompetitionActive(string calldata competitionName) view external returns (bool active);
 
+    function getCompetitionActiveByAddress(address competitionAddress) view external returns (bool active);
+
     function getCompetitionAddress(string calldata competitionName) view external returns (address competitionAddress);
-
-    function getCompetitionRulesLocation(string calldata competitionName) view external returns (bytes32 rulesLocation);
-
-    function getTokenAddress() view external returns (address token);
 
     function getExtensionAddress(string calldata extensionName) view external returns (address extensionAddress);
 
@@ -36,9 +26,8 @@ interface IRegistry{
 
     function getExtensionInfoLocation(string calldata extensionName) view external returns (bytes32 informationLocation);
 
-    event NewCompetitionRegistered(string indexed competitionName, address indexed competitionAddress, bytes32 rulesLocation);
-    event CompetitionActiveToggled(string indexed competitionName);
-    event CompetitionRulesLocationChanged(string indexed competitionName, bytes32 indexed newLocation);
+    event CompetitionAuthorized(address indexed competitionAddress, string indexed competitionName);
+    event CompetitionUnauthorized(address indexed competitionAddress, string indexed competitionName);
     event TokenAddressChanged(address indexed newAddress);
     event NewExtensionRegistered(string indexed extensionName, address indexed extensionAddress, bytes32 indexed informationLocation);
     event ExtensionActiveToggled(string indexed extensionName);

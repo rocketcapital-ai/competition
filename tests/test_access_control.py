@@ -6,11 +6,12 @@ class TestAccessControl:
     def setup(self):
         self.admin = accounts[0]
         self.participants = accounts[1:]
-        self.token = Token.deploy("RockCap Token", "RCP", int(Decimal('100000000e18')), {'from': self.admin})
+        self.token = Token.deploy({'from': self.admin})
+        self.token.initialize("RockCap Token", "RCP", int(Decimal('100000000e6')), self.admin, {'from': self.admin})
         self.competition = Competition.deploy({'from': self.admin})
 
-        stake_threshold = int(Decimal('10e18'))
-        challenge_rewards_threshold = int(Decimal('10e18'))
+        stake_threshold = int(Decimal('10e6'))
+        challenge_rewards_threshold = int(Decimal('10e6'))
 
         self.competition.initialize(stake_threshold, challenge_rewards_threshold, self.token, {'from': self.admin})
 

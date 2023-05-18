@@ -1,4 +1,4 @@
-pragma solidity 0.8.4;
+pragma solidity ^0.8.4;
 
 // SPDX-License-Identifier: MIT
 
@@ -6,7 +6,7 @@ import './../../interfaces/ICompetition.sol';
 import './../../interfaces/IToken.sol';
 import './../../contracts/CompetitionStorage.sol';
 import './../../contracts/AccessControlRci.sol';
-import './../standard/proxy/utils/Initializable.sol';
+import "OpenZeppelin/openzeppelin-contracts@4.8.0/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @title RCI Tournament(Competition) Contract
@@ -24,14 +24,12 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     initializer
     {
         require(tokenAddress_ != address(0), "No token address found.");
-        _initializeRciAdmin();
+        _initializeRciAdmin(msg.sender);
         _stakeThreshold = stakeThreshold_;
         _rewardsThreshold = rewardsThreshold_;
         _token = IToken(tokenAddress_);
         _challengeCounter = 0;
         _challenges[_challengeCounter].phase = 4;
-        _challengeRewardsPercentageInWei = 20e16;
-        _tournamentRewardsPercentageInWei = 60e16;
     }
 
     /**
@@ -91,49 +89,36 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
         emit StakeDecreased(staker, amountToken);
     }
 
-    function submitNewPredictions(bytes32 submissionHash)
+    function submit(address staker, bytes32 submissionHash)
     external override
     returns (uint32 challengeNumber)
     {
-        uint256 currentBal = _stakes[msg.sender];
-        require(currentBal >= _stakeThreshold, "Competition - submitNewPredictions: Stake is below threshold.");
-        challengeNumber = _updateSubmission(bytes32(0), submissionHash);
-        EnumerableSet.add(_challenges[challengeNumber].submitters, msg.sender);
-        _challenges[challengeNumber].submitterInfo[msg.sender].staked = currentBal;
-    }
+        require(msg.sender == address(_token), "TKCL");
+        challengeNumber = _updateSubmission(staker, submissionHash);
 
-    function updateSubmission(bytes32 oldSubmissionHash, bytes32 newSubmissionHash)
-    public override
-    returns (uint32 challengeNumber)
-    {
-        require(oldSubmissionHash != bytes32(0), "Competition - updateSubmission: Must have pre-existing submission.");
-        challengeNumber = _updateSubmission(oldSubmissionHash, newSubmissionHash);
-
-        if (newSubmissionHash == bytes32(0)){
-            EnumerableSet.remove(_challenges[challengeNumber].submitters, msg.sender);
-            _challenges[challengeNumber].submitterInfo[msg.sender].staked = 0;
+        if (submissionHash == bytes32(0)){
+            EnumerableSet.remove(_challenges[challengeNumber].submitters, staker);
+        } else {
+            EnumerableSet.add(_challenges[challengeNumber].submitters, staker);
         }
     }
 
-    function _updateSubmission(bytes32 oldSubmissionHash, bytes32 newSubmissionHash)
+    function _updateSubmission(address staker, bytes32 newSubmissionHash)
     private
     returns (uint32 challengeNumber)
     {
         challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase == 1, "Competition - updateSubmission: Not available for submissions.");
-        require(oldSubmissionHash != newSubmissionHash, "Competition - updateSubmission: Cannot update with the same hash as before.");
-        require(_challenges[challengeNumber].submitterInfo[msg.sender].submission == oldSubmissionHash,
-                "Competition - updateSubmission: Clash in existing submission hash.");
-        _challenges[challengeNumber].submitterInfo[msg.sender].submission = newSubmissionHash;
+        require(_challenges[challengeNumber].phase == 1, "WGPH");
+        _challenges[challengeNumber].submitterInfo[staker].submission = newSubmissionHash;
 
-        emit SubmissionUpdated(challengeNumber, msg.sender, newSubmissionHash);
+        emit SubmissionUpdated(challengeNumber, staker, newSubmissionHash);
     }
 
     /**
     ORGANIZER WRITE METHODS
     **/
     function updateMessage(string calldata newMessage)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         _message = newMessage;
@@ -143,7 +128,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function updateDeadlines(uint32 challengeNumber, uint256 index, uint256 timestamp)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         success = _updateDeadlines(challengeNumber, index, timestamp);
@@ -158,7 +143,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function updateRewardsThreshold(uint256 newThreshold)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         _rewardsThreshold = newThreshold;
@@ -168,7 +153,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function updateStakeThreshold(uint256 newStakeThreshold)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         _stakeThreshold = newStakeThreshold;
@@ -177,28 +162,8 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
         emit StakeThresholdUpdated(newStakeThreshold);
     }
 
-    function updateChallengeRewardsPercentageInWei(uint256 newPercentage)
-    external override onlyAdmin
-    returns (bool success)
-    {
-        _challengeRewardsPercentageInWei = newPercentage;
-        success = true;
-
-        emit ChallengeRewardsPercentageInWeiUpdated(newPercentage);
-    }
-
-    function updateTournamentRewardsPercentageInWei(uint256 newPercentage)
-    external override onlyAdmin
-    returns (bool success)
-    {
-        _tournamentRewardsPercentageInWei = newPercentage;
-        success = true;
-
-        emit TournamentRewardsPercentageInWeiUpdated(newPercentage);
-    }
-
     function openChallenge(bytes32 datasetHash, bytes32 keyHash, uint256 submissionCloseDeadline, uint256 nextChallengeDeadline)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
@@ -213,10 +178,6 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
         _updateDataset(challengeNumber, bytes32(0), datasetHash);
         _updateKey(challengeNumber, bytes32(0), keyHash);
 
-        _currentChallengeRewardsBudget = _competitionPool * _challengeRewardsPercentageInWei/(1e18);
-        _currentTournamentRewardsBudget = _competitionPool * _tournamentRewardsPercentageInWei/(1e18);
-        _currentStakingRewardsBudget = _competitionPool - _currentChallengeRewardsBudget - _currentTournamentRewardsBudget;
-
         _updateDeadlines(challengeNumber, 0, submissionCloseDeadline);
         _updateDeadlines(challengeNumber, 1, nextChallengeDeadline);
 
@@ -226,7 +187,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function updateDataset(bytes32 oldDatasetHash, bytes32 newDatasetHash)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
@@ -236,7 +197,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function updateKey(bytes32 oldKeyHash, bytes32 newKeyHash)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
@@ -270,7 +231,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function updatePrivateKey(uint32 challengeNumber, bytes32 newKeyHash)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         _challenges[challengeNumber].privateKey = newKeyHash;
@@ -279,7 +240,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function closeSubmission()
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
@@ -291,14 +252,14 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function submitResults(bytes32 resultsHash)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         success = _updateResults(bytes32(0), resultsHash);
     }
 
     function updateResults(bytes32 oldResultsHash, bytes32 newResultsHash)
-    public override onlyAdmin
+    public override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
 
@@ -321,7 +282,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function payRewards(address[] calldata submitters, uint256[] calldata stakingRewards, uint256[] calldata challengeRewards, uint256[] calldata tournamentRewards)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         success = _payRewards(_challengeCounter, submitters, stakingRewards, challengeRewards, tournamentRewards);
@@ -350,11 +311,6 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
 
             _paySingleAddress(challengeNumber, submitters[i], stakingRewards[i], challengeRewards[i], tournamentRewards[i]);
         }
-
-        // allow for reverting on underflow
-        _currentStakingRewardsBudget -= totalStakingAmount;
-        _currentChallengeRewardsBudget -= totalChallengeAmount;
-        _currentTournamentRewardsBudget -= totalTournamentAmount;
 
         _competitionPool -= totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
         _currentTotalStaked += totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
@@ -390,7 +346,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function updateChallengeAndTournamentScores(uint32 challengeNumber, address[] calldata participants, uint256[] calldata challengeScores, uint256[] calldata tournamentScores)
-    public override onlyAdmin
+    public override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         require(_challenges[challengeNumber].phase >= 3, "Competition - updateChallengeAndTournamentScores: Challenge is in unexpected state.");
@@ -410,7 +366,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function updateInformationBatch(uint32 challengeNumber, address[] calldata participants, uint256 itemNumber, uint[] calldata values)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         require(_challenges[challengeNumber].phase >= 3, "Competition - updateInformationBatch: Challenge is in unexpected state.");
@@ -426,7 +382,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function advanceToPhase(uint8 phase)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
@@ -451,7 +407,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function moveRemainderToPool()
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         require(_challenges[_challengeCounter].phase == 4, "Competition - moveRemainderToPool: PLease wait for the challenge to complete before sponsoring.");
@@ -486,41 +442,6 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     returns (uint256 currentTotalStaked)
     {
         currentTotalStaked = _currentTotalStaked;
-    }
-
-    function getCurrentStakingRewardsBudget()
-    view external override
-    returns (uint256 currentStakingRewardsBudget)
-    {
-        currentStakingRewardsBudget = _currentStakingRewardsBudget;
-    }
-
-    function getCurrentChallengeRewardsBudget()
-    view external override
-    returns (uint256 currentChallengeRewardsBudget)
-    {
-        currentChallengeRewardsBudget = _currentChallengeRewardsBudget;
-    }
-
-    function getCurrentTournamentRewardsBudget()
-    view external override
-    returns (uint256 currentTournamentRewardsBudget)
-    {
-        currentTournamentRewardsBudget = _currentTournamentRewardsBudget;
-    }
-
-    function getChallengeRewardsPercentageInWei()
-    view external override
-    returns (uint256 challengeRewardsPercentageInWei)
-    {
-        challengeRewardsPercentageInWei = _challengeRewardsPercentageInWei;
-    }
-
-    function getTournamentRewardsPercentageInWei()
-    view external override
-    returns (uint256 tournamentRewardsPercentageInWei)
-    {
-        tournamentRewardsPercentageInWei = _tournamentRewardsPercentageInWei;
     }
 
     function getLatestChallengeNumber()
@@ -642,7 +563,7 @@ contract BadCompetition3 is AccessControlRci, ICompetition, CompetitionStorage, 
     }
 
     function getOverallRewards(uint32 challengeNumber, address participant)
-    view external override
+    view external
     returns (uint256 overallRewards)
     {
         overallRewards =

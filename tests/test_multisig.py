@@ -9,10 +9,11 @@ class TestMultiSig:
         self.non_owners = accounts[11:]
         self.required = 6
         self.multi_sig = MultiSig.deploy(self.owners, self.required, {'from': self.admin})
-        self.token = Token.deploy("RockCap Token", "RCP", int(Decimal('100000000e18')), {'from': self.admin})
+        self.token = Token.deploy({'from': self.admin})
+        self.token.initialize("RockCap Token", "RCP", int(Decimal('100000000e6')), self.admin, {'from': self.admin})
         self.competition = Competition.deploy({'from': self.admin})
-        stake_threshold = int(Decimal('10e18'))
-        challenge_rewards_threshold = int(Decimal('10e18'))
+        stake_threshold = int(Decimal('10e6'))
+        challenge_rewards_threshold = int(Decimal('10e6'))
         self.competition.initialize(stake_threshold, challenge_rewards_threshold, self.token, {'from': self.admin})
         self.token.transfer(self.multi_sig, self.token.balanceOf(self.admin), {'from': self.admin})
 
@@ -137,33 +138,3 @@ class TestMultiSig:
 
 
         verify(set(self.owners), set(self.multi_sig.getOwners()))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        # self.token = Token.deploy("RockCap Token", "RCP", int(Decimal('100000000e18')), {'from': self.admin})
-        # self.competition = Competition.deploy({'from': self.admin})
-        #
-        # stake_threshold = int(Decimal('10e18'))
-        # challenge_rewards_threshold = int(Decimal('10e18'))
-        #
-        # self.competition.initialize(stake_threshold, challenge_rewards_threshold, self.token, {'from': self.admin})
-        #
-        # self.main_admin_hash = self.competition.RCI_MAIN_ADMIN()
-        # self.child_admin_hash = self.competition.RCI_CHILD_ADMIN()
-        # self.default_admin_hash = self.competition.DEFAULT_ADMIN_ROLE()
-
-
-

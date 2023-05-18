@@ -1,9 +1,9 @@
-pragma solidity 0.8.4;
+pragma solidity ^0.8.4;
 
 // SPDX-License-Identifier: MIT
 
 import '../interfaces/IToken.sol';
-import "./standard/utils/structs/EnumerableSet.sol";
+import "OpenZeppelin/openzeppelin-contracts@4.8.0/contracts/utils/structs/EnumerableSet.sol";
 
 
 /**
@@ -22,6 +22,7 @@ contract CompetitionStorage {
         uint256 challengeScores;
         uint256 tournamentScores;
         mapping(uint256 => uint) info;
+        uint256 tokensBurned;
     }
 
     struct Challenge{
@@ -44,9 +45,21 @@ contract CompetitionStorage {
     uint256 internal _currentStakingRewardsBudget;
     uint256 internal _currentChallengeRewardsBudget;
     uint256 internal _currentTournamentRewardsBudget;
-    uint256 internal _challengeRewardsPercentageInWei;
-    uint256 internal _tournamentRewardsPercentageInWei;
     string internal _message;
     mapping(address => uint256) internal _stakes;
     mapping(uint32 => Challenge) internal _challenges;
+
+    address internal _burnRecipient;
+    uint256 internal _burnedAmount;
+    EnumerableSet.AddressSet stakerSet;
+    mapping(uint32 => uint256) public challengeOpenedBlockNumbers;
+    mapping(uint32 => uint256) public submissionClosedBlockNumbers;
+    mapping(uint32 => EnumerableSet.AddressSet) internal _historicalStakerSet;
+    mapping(uint32 => mapping(address => uint256)) internal _historicalStakeAmounts;
+    mapping(uint32 => uint256) internal _historicalTotalStake;
+
+    address internal _vault;
+
+
+
 }

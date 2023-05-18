@@ -1,5 +1,5 @@
 from utils_for_testing import *
-from brownie import reverts, accounts, Registry, MultiSig
+from brownie import reverts, accounts, Token, MultiSig
 
 class TestRegistry:
     def setup(self):
@@ -7,7 +7,9 @@ class TestRegistry:
         self.competitions = accounts[1:6]
         self.tokens = accounts[6:10]
         self.use_multi_admin = False
-        self.registry = Registry.deploy({'from': self.admin})
+        self.registry = Token.deploy({'from': self.admin})
+        self.registry.initialize("RockCap Token", "RCP", int(Decimal("1e12")), self.admin, {'from': self.admin})
+
     
     def execute_fn(self, dest, fn, args_list, use_multi_admin, exp_revert):
         if not use_multi_admin:
@@ -21,90 +23,47 @@ class TestRegistry:
             data = fn.encode_input(*args_no_sender)
             self.execute_one_transaction(dest, data, exp_revert)
 
-    def test_register_new_competition(self):
+    def test_authorize_new_competition(self):
         verify([], self.registry.getCompetitionList())
         comp_name = getRandomString(10)
         comp_address = self.competitions[0]
-        rules_loc = getHash()        
-        self.execute_fn(self.registry, self.registry.registerNewCompetition,
-                        [comp_name, comp_address, rules_loc, {'from': self.admin}],
+        self.execute_fn(self.registry, self.registry.authorizeCompetition,
+                        [comp_address, comp_name, {'from': self.admin}],
                         self.use_multi_admin, exp_revert=False)
         
         verify(comp_address, self.registry.getCompetitionAddress(comp_name))
-        verify('0x' + rules_loc, self.registry.getCompetitionRulesLocation(comp_name))
         verify(True, self.registry.getCompetitionActive(comp_name))
         verify([comp_name], self.registry.getCompetitionList())
 
         # should not be able to register again
-        self.execute_fn(self.registry, self.registry.registerNewCompetition,
-                        [comp_name, comp_address, rules_loc, {'from': self.admin}],
+        self.execute_fn(self.registry, self.registry.authorizeCompetition,
+                        [comp_address, comp_name, {'from': self.admin}],
                         self.use_multi_admin, exp_revert=True)
 
         # should not be able to register 0 address
         zero_address = '0x' + '0' * 40
-        self.execute_fn(self.registry, self.registry.registerNewCompetition,
-                        [comp_name, zero_address, rules_loc, {'from': self.admin}],
+        self.execute_fn(self.registry, self.registry.authorizeCompetition,
+                        [zero_address, comp_name, {'from': self.admin}],
                         self.use_multi_admin, exp_revert=True)
 
-        # should not be able to register with 0 hash
-        zero_hash = '0x' + '0' * 64
-        self.execute_fn(self.registry, self.registry.registerNewCompetition,
-                        [comp_name, comp_address, zero_hash, {'from': self.admin}],
-                        self.use_multi_admin, exp_revert=True)
-        
-    def test_toggle_competition_active(self):
-        comp_name = getRandomString(10)
-        comp_address = self.competitions[0]
-        rules_loc = getHash()
-        self.execute_fn(self.registry, self.registry.registerNewCompetition,
-                        [comp_name, comp_address, rules_loc, {'from': self.admin}],
-                        self.use_multi_admin, exp_revert=False)
-        
-        self.execute_fn(self.registry, self.registry.toggleCompetitionActive,
-                        [comp_name[0], {'from': self.admin}],
-                        self.use_multi_admin, exp_revert=True)
-        for i in range(2):
-            currently_active = self.registry.getCompetitionActive(comp_name)
-            self.execute_fn(self.registry, self.registry.toggleCompetitionActive,
-                            [comp_name, {'from': self.admin}],
-                            self.use_multi_admin, exp_revert=False)
-            verify(not currently_active, self.registry.getCompetitionActive(comp_name))
-            
-    def test_change_rules_location(self):
-        comp_name = getRandomString(10)
-        comp_address = self.competitions[0]
-        rules_loc = getHash()
-        self.execute_fn(self.registry, self.registry.registerNewCompetition,
-                        [comp_name, comp_address, rules_loc, {'from': self.admin}],
-                        self.use_multi_admin, exp_revert=False)
-        new_loc = getHash()
-    
-        self.execute_fn(self.registry, self.registry.changeCompetitionRulesLocation,
-                        [comp_name[0], new_loc, {'from': self.admin}],
+        # should not be able to de-register 0 address
+        zero_address = '0x' + '0' * 40
+        self.execute_fn(self.registry, self.registry.unauthorizeCompetition,
+                        [zero_address, comp_name, {'from': self.admin}],
                         self.use_multi_admin, exp_revert=True)
 
-        self.execute_fn(self.registry, self.registry.changeCompetitionRulesLocation,
-                        [comp_name, bytes([0]*32), {'from': self.admin}],
-                        self.use_multi_admin, exp_revert=True)
-
-        self.execute_fn(self.registry, self.registry.changeCompetitionRulesLocation,
-                        [comp_name, new_loc, {'from': self.admin}],
+        # unauthorize competition
+        self.execute_fn(self.registry, self.registry.unauthorizeCompetition,
+                        [comp_address, comp_name, {'from': self.admin}],
                         self.use_multi_admin, exp_revert=False)
-        
-        verify('0x' + new_loc, self.registry.getCompetitionRulesLocation(comp_name))
-        
-    def test_change_token_address(self):
 
-        self.execute_fn(self.registry, self.registry.changeTokenAddress,
-                        ['0x{}'.format('0'*40), {'from': self.admin}],
-                        self.use_multi_admin, exp_revert=True)
-        
-        token_address = random.choice(self.tokens)
-        self.execute_fn(self.registry, self.registry.changeTokenAddress,
-                        [token_address, {'from': self.admin}],
+        verify(zero_address, self.registry.getCompetitionAddress(comp_name))
+        verify(False, self.registry.getCompetitionActive(comp_name))
+        verify([], self.registry.getCompetitionList())
+
+        self.execute_fn(self.registry, self.registry.authorizeCompetition,
+                        [comp_address, comp_name, {'from': self.admin}],
                         self.use_multi_admin, exp_revert=False)
-        
-        verify(token_address, self.registry.getTokenAddress())
 
     def test_register_new_extension(self):
         verify([], self.registry.getExtensionList())
@@ -182,20 +141,20 @@ class TestRegistry:
     def test_batch_call(self):
         comp_name = getRandomString(10)
         comp_address = self.competitions[0]
-        rules_loc = getHash()
-        self.execute_fn(self.registry, self.registry.registerNewCompetition,
-                        [comp_name, comp_address, rules_loc, {'from': self.admin}],
+        self.execute_fn(self.registry, self.registry.authorizeCompetition,
+                        [comp_address, comp_name, {'from': self.admin}],
                         self.use_multi_admin, exp_revert=False)
 
-        token_address = random.choice(self.tokens)
-        self.execute_fn(self.registry, self.registry.changeTokenAddress,
-                        [token_address, {'from': self.admin}],
+        comp_name = getRandomString(10)
+        comp_address = self.competitions[1]
+        self.execute_fn(self.registry, self.registry.authorizeCompetition,
+                        [comp_address, comp_name, {'from': self.admin}],
                         self.use_multi_admin, exp_revert=False)
 
         data = []
         addresses = []
 
-        datum = self.registry.getTokenAddress.encode_input()
+        datum = self.registry.getCompetitionList.encode_input()
         data.append(datum)
         addresses.append(self.registry)
 
@@ -204,10 +163,14 @@ class TestRegistry:
         addresses.append(self.registry)
 
         results = self.registry.batchCall(addresses, data)
-        token_address = '0x' + results[0].hex()[-40:]
+        comp_list = []
+        comp_list.append(results[0][32*5:32*5+10])
+        comp_list.append(results[0][32*7:32*7+10])
+        comp_list = list(map(lambda x: str(x, "utf-8"), comp_list))
+
         is_actually_active = True if int(results[1].hex(), 16) == 1 else False
 
-        verify(token_address, self.registry.getTokenAddress())
+        verify(comp_list, self.registry.getCompetitionList())
         verify(True, is_actually_active)
 
     def test_unauthorized(self):
@@ -215,10 +178,8 @@ class TestRegistry:
         address = self.competitions[-1]
         non_admin = self.tokens[-1]
 
-        with reverts(): self.registry.registerNewCompetition(name, address, getHash(), {'from': non_admin})
-        with reverts(): self.registry.toggleCompetitionActive(name, {'from': non_admin})
-        with reverts(): self.registry.changeCompetitionRulesLocation(name, getHash(), {'from': non_admin})
-        with reverts(): self.registry.changeTokenAddress(address, {'from': non_admin})
+        with reverts(): self.registry.authorizeCompetition(address, name, {'from': non_admin})
+        with reverts(): self.registry.unauthorizeCompetition(address, name, {'from': non_admin})
         with reverts(): self.registry.registerNewExtension(name, address, getHash(), {'from': non_admin})
         with reverts(): self.registry.toggleExtensionActive(name, {'from': non_admin})
         with reverts(): self.registry.changeExtensionInfoLocation(name, getHash(), {'from': non_admin})
@@ -235,7 +196,8 @@ class TestRegistryMulti(TestRegistry):
         self.tokens = accounts[8:]
         self.required = 3
         self.multi_sig = MultiSig.deploy(self.owners, self.required, {'from': self.admin})
-        self.registry = Registry.deploy({'from': self.admin})
+        self.registry = Token.deploy({'from': self.admin})
+        self.registry.initialize("RockCap Token", "RCP", int(Decimal("1e12")), self.admin, {'from': self.admin})
 
         # Hand admin rights to multisig contract
         self.main_admin_hash = self.registry.RCI_MAIN_ADMIN()
@@ -297,13 +259,3 @@ class TestRegistryMulti(TestRegistry):
                 verify(set(self.owners[:i+1]), set(self.multi_sig.getConfirmations(latest_id)))
                 verify(False, self.multi_sig.isConfirmed(latest_id))
                 verify(False, tx[3])
-
-
-        
-        
-        
-            
-        
-        
-        
-        

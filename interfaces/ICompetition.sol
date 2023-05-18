@@ -1,4 +1,4 @@
-pragma solidity 0.8.4;
+pragma solidity ^0.8.4;
 
 // SPDX-License-Identifier: MIT
 
@@ -25,21 +25,23 @@ interface ICompetition{
     **/
     function decreaseStake(address staker, uint256 amountToken) external returns (bool success);
 
-    /**
-    * @dev Called by participant to make a new prediction submission for the current challenge.
-    * @dev Will be successful if the participant's stake is above the staking threshold.
-    * @param submissionHash IPFS reference hash of submission. This is the IPFS CID less the 1220 prefix.
-    * @return challengeNumber Challenge that this submission was made for.
-    **/
-    function submitNewPredictions(bytes32 submissionHash) external returns (uint32 challengeNumber);
+    function submit(address staker, bytes32 submissionHash) external returns (uint32 challengeNumber);
 
-    /**
-    * @dev Called by participant to modify prediction submission for the current challenge.
-    * @param oldSubmissionHash IPFS reference hash of previous submission. This is the IPFS CID less the 1220 prefix.
-    * @param newSubmissionHash IPFS reference hash of new submission. This is the IPFS CID less the 1220 prefix.
-    * @return challengeNumber Challenge that this submission was made for.
-    **/
-    function updateSubmission(bytes32 oldSubmissionHash, bytes32 newSubmissionHash) external returns (uint32 challengeNumber);
+//    /**
+//    * @dev Called by participant to make a new prediction submission for the current challenge.
+//    * @dev Will be successful if the participant's stake is above the staking threshold.
+//    * @param submissionHash IPFS reference hash of submission. This is the IPFS CID less the 1220 prefix.
+//    * @return challengeNumber Challenge that this submission was made for.
+//    **/
+//    function submitNewPredictions(bytes32 submissionHash) external returns (uint32 challengeNumber);
+//
+//    /**
+//    * @dev Called by participant to modify prediction submission for the current challenge.
+//    * @param oldSubmissionHash IPFS reference hash of previous submission. This is the IPFS CID less the 1220 prefix.
+//    * @param newSubmissionHash IPFS reference hash of new submission. This is the IPFS CID less the 1220 prefix.
+//    * @return challengeNumber Challenge that this submission was made for.
+//    **/
+//    function updateSubmission(bytes32 oldSubmissionHash, bytes32 newSubmissionHash) external returns (uint32 challengeNumber);
 
     /**
     ORGANIZER WRITE METHODS
@@ -74,20 +76,6 @@ interface ICompetition{
     * @return success True if the operation completed successfully.
     **/
     function updateStakeThreshold(uint256 newStakeThreshold) external returns (bool success);
-
-    /**
-    * @dev Called only by authorized admin to update the percentage of the competition rewards pool allocated to the challenge rewards budget.
-    * @param newPercentage New percentage amount in wei.
-    * @return success True if the operation completed successfully.
-    **/
-    function updateChallengeRewardsPercentageInWei(uint256 newPercentage) external returns (bool success);
-
-    /**
-    * @dev Called only by authorized admin to update the percentage of the competition rewards pool allocated to the tournament rewards budget.
-    * @param newPercentage New percentage amount in wei.
-    * @return success True if the operation completed successfully.
-    **/
-    function updateTournamentRewardsPercentageInWei(uint256 newPercentage) external returns (bool success);
 
     /**
     * @dev Called only by authorized admin to update the private key for this challenge. This should be done at the end of the challenge.
@@ -217,36 +205,6 @@ interface ICompetition{
     function getCurrentTotalStaked() view external returns (uint256 currentTotalStaked);
 
     /**
-    * @dev Called by anyone to check the staking rewards budget allocation for the current challenge.
-    * @return currentStakingRewardsBudget Budget for staking rewards in wei.
-    **/
-    function getCurrentStakingRewardsBudget() view external returns (uint256 currentStakingRewardsBudget);
-
-    /**
-    * @dev Called by anyone to check the challenge rewards budget for the current challenge.
-    * @return currentChallengeRewardsBudget Budget for challenge rewards payment in wei.
-    **/
-    function getCurrentChallengeRewardsBudget() view external returns (uint256 currentChallengeRewardsBudget);
-
-    /**
-    * @dev Called by anyone to check the tournament rewards budget for the current challenge.
-    * @return currentTournamentRewardsBudget Budget for tournament rewards payment in wei.
-    **/
-    function getCurrentTournamentRewardsBudget() view external returns (uint256 currentTournamentRewardsBudget);
-
-    /**
-    * @dev Called by anyone to check the percentage of the total competition reward pool allocated for the challenge reward for this challenge.
-    * @return challengeRewardsPercentageInWei Percentage for challenge reward budget in wei.
-    **/
-    function getChallengeRewardsPercentageInWei() view external returns (uint256 challengeRewardsPercentageInWei);
-
-    /**
-    * @dev Called by anyone to check the percentage of the total competition reward pool allocated for the tournament reward for this challenge.
-    * @return tournamentRewardsPercentageInWei Percentage for tournament reward budget in wei.
-    **/
-    function getTournamentRewardsPercentageInWei() view external returns (uint256 tournamentRewardsPercentageInWei);
-
-    /**
     * @dev Called by anyone to get the number of the latest challenge.
     * @dev As the challenge number begins from 1, this is also the total number of challenges created in this competition.
     * @return latestChallengeNumber Latest challenge created.
@@ -363,14 +321,6 @@ interface ICompetition{
     * @return tournamentRewards Amount of tournament rewards given to this participant for this challenge.
     **/
     function getTournamentRewards(uint32 challengeNumber, address participant) view external returns (uint256 tournamentRewards);
-
-    /**
-    * @dev Called by anyone to check the overall rewards (staking + challenge + tournament rewards) given to this participant in a particular challenge.
-    * @param challengeNumber Challenge to get the overall rewards given of.
-    * @param participant Address of participant to check on.
-    * @return overallRewards Amount of overall rewards given to this participant for this challenge.
-    **/
-    function getOverallRewards(uint32 challengeNumber, address participant) view external returns (uint256 overallRewards);
 
     /**
     * @dev Called by anyone to check get the challenge score of this participant for this challenge.

@@ -1,81 +1,65 @@
-pragma solidity 0.8.4;
+pragma solidity ^0.8.4;
 
 // SPDX-License-Identifier: MIT
 
-import './AccessControlRci.sol';
 import './../interfaces/IRegistry.sol';
+import "./TransferFeeToken.sol";
 
 
-contract Registry is AccessControlRci, IRegistry{
-    struct Comp{
-        bool active;
-        address competitionAddress;
-        bytes32 rulesLocation;
-    }
-
+abstract contract Registry is IRegistry, TransferFeeToken{
     struct Ext{
         bool active;
         address extensionAddress;
         bytes32 informationLocation;
     }
-    address private _token;
-    mapping(string => Comp) private _competition;
+
+    using EnumerableSet for EnumerableSet.AddressSet;
+    EnumerableSet.AddressSet private _authorizedCompetitions;
+
+    mapping(string => address) private _competitionNameAddressMap; // for compatibility with legacy read methods.
+    mapping(address => string) private _competitionAddressNameMap; // for compatibility with legacy read methods.
+
     mapping(string => Ext) private _extension;
-    string[] private _competitionNames;
     string[] private _extensionNames;
 
-
     constructor()
+    TransferFeeToken("RCI Template V1", "RCI Template V1", 0, msg.sender)
+    {}
+
+    function authorizeCompetition(address competitionAddress, string calldata competitionName)
+    external
+    onlyRole(RCI_CHILD_ADMIN)
     {
-        _initializeRciAdmin();
+        require(competitionAddress != address(0), "Cannot authorize 0 address.");
+        require(_competitionNameAddressMap[competitionName] == address(0), "Name taken");
+        require(stringCompareNull(_competitionAddressNameMap[competitionAddress]), "Address taken");
+        _authorizedCompetitions.add(competitionAddress);
+        _competitionNameAddressMap[competitionName] = competitionAddress;
+        _competitionAddressNameMap[competitionAddress] = competitionName;
+
+        emit CompetitionAuthorized(competitionAddress, competitionName);
     }
 
-    function registerNewCompetition(string calldata competitionName, address competitionAddress, bytes32 rulesLocation)
-    external override onlyAdmin
+    function unauthorizeCompetition(address competitionAddress, string calldata competitionName)
+    external
+    onlyRole(RCI_CHILD_ADMIN)
     {
-        require(competitionAddress != address(0), "Registry - registerNewCompetition: Cannot register 0 address.");
-        require(rulesLocation != bytes32(0), "Registry - rulesLocation: Cannot set rules location to 0.");
-        require(_competition[competitionName].competitionAddress == address(0), "Registry - registerNewCompetition: Competition already exists.");
-        _competition[competitionName] = Comp({active:true, competitionAddress:competitionAddress, rulesLocation:rulesLocation});
-        _competitionNames.push(competitionName);
+        require(competitionAddress != address(0), "Cannot unauthorize 0 address.");
+        require(_competitionNameAddressMap[competitionName] == competitionAddress, "No name with this address.");
+        require(stringCompare(_competitionAddressNameMap[competitionAddress], competitionName), "No address with this name.");
+         _authorizedCompetitions.remove(competitionAddress);
+        _competitionNameAddressMap[competitionName] = address(0);
+        _competitionAddressNameMap[competitionAddress] = "";
 
-        emit NewCompetitionRegistered(competitionName, competitionAddress, rulesLocation);
-    }
-
-    function toggleCompetitionActive(string calldata competitionName)
-    external override onlyAdmin
-    {
-        require(_competition[competitionName].competitionAddress != address(0), "Registry - toggleCompetitionActive: Competition does not exist. Use function 'registerNewCompetition' instead.");
-        _competition[competitionName].active = !_competition[competitionName].active;
-
-        emit CompetitionActiveToggled(competitionName);
-    }
-
-    function changeCompetitionRulesLocation(string calldata competitionName, bytes32 newLocation)
-    external override onlyAdmin
-    {
-        require(_competition[competitionName].competitionAddress != address(0), "Registry - changeCompetitionRulesLocation: Competition does not exist. Use function 'registerNewCompetition' instead.");
-        require(newLocation != bytes32(0), "Registry - changeCompetitionRulesLocation: Cannot set to 0 address.");
-        _competition[competitionName].rulesLocation = newLocation;
-
-        emit CompetitionRulesLocationChanged(competitionName, newLocation);
-    }
-
-    function changeTokenAddress(address newAddress)
-    external override onlyAdmin
-    {
-        require(newAddress != address(0), "Registry - changeTokenAddress: Cannot set to 0 address.");
-        _token = newAddress;
-
-        emit TokenAddressChanged(newAddress);
+        emit CompetitionUnauthorized(competitionAddress, competitionName);
     }
 
     function registerNewExtension(string calldata extensionName,address extensionAddress, bytes32 informationLocation)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     {
-        require(extensionAddress != address(0), "Registry - registerNewExtension: Cannot register 0 address.");
-        require(informationLocation != bytes32(0), "Registry - registerNewExtension: Cannot set information location to 0.");
-        require(_extension[extensionName].extensionAddress == address(0), "Registry - registerNewExtension: Extension already exists.");
+        require(extensionAddress != address(0), "Cannot register 0 address.");
+        require(informationLocation != bytes32(0), "Cannot set information location to 0.");
+        require(_extension[extensionName].extensionAddress == address(0), "Extension already exists.");
         _extension[extensionName] = Ext({active:true, extensionAddress:extensionAddress, informationLocation:informationLocation});
         _extensionNames.push(extensionName);
 
@@ -83,19 +67,19 @@ contract Registry is AccessControlRci, IRegistry{
     }
     
     function toggleExtensionActive(string calldata extensionName)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     {
-        require(_extension[extensionName].extensionAddress != address(0), "Registry - toggleExtensionActive: Extension does not exist. Use function 'registerNewExtension' instead.");
+        require(_extension[extensionName].extensionAddress != address(0), "Extension does not exist. Use function 'registerNewExtension' instead.");
         _extension[extensionName].active = !_extension[extensionName].active;
 
         emit ExtensionActiveToggled(extensionName);
     }
     
     function changeExtensionInfoLocation(string calldata extensionName, bytes32 newLocation)
-    external override onlyAdmin
+    external override onlyRole(RCI_CHILD_ADMIN)
     {
-        require(_extension[extensionName].extensionAddress != address(0), "Registry - changeExtensionInfoLocation: Competition does not exist. Use function 'registerNewCompetition' instead.");
-        require(newLocation != bytes32(0), "Registry - changeExtensionInfoLocation: Cannot set to 0 address.");
+        require(_extension[extensionName].extensionAddress != address(0), "Competition does not exist. Use function 'registerNewCompetition' instead.");
+        require(newLocation != bytes32(0), "Cannot set to 0 address.");
         _extension[extensionName].informationLocation = newLocation;
 
         emit ExtensionInfoLocationChanged(extensionName, newLocation);
@@ -120,7 +104,33 @@ contract Registry is AccessControlRci, IRegistry{
     view external override
     returns (string[] memory competitionNames)
     {
-        competitionNames = _competitionNames;
+        address[] memory competitionAddresses = getListFromSet(_authorizedCompetitions, 0, _authorizedCompetitions.length());
+        competitionNames = new string[](competitionAddresses.length);
+        for (uint i = 0; i < competitionAddresses.length; i++){
+            competitionNames[i] = _competitionAddressNameMap[competitionAddresses[i]];
+        }
+    }
+
+    function getCompetitionActive(string calldata competitionName)
+    view external override
+    returns (bool active)
+    {
+        address competitionAddress = _competitionNameAddressMap[competitionName];
+        active = getCompetitionActiveByAddress(competitionAddress);
+    }
+
+    function getCompetitionActiveByAddress(address competitionAddress)
+    view public override
+    returns (bool active)
+    {
+        active = _authorizedCompetitions.contains(competitionAddress);
+    }
+
+    function getCompetitionAddress(string calldata competitionName)
+    view external override
+    returns (address competitionAddress)
+    {
+        competitionAddress = _competitionNameAddressMap[competitionName];
     }
 
     function getExtensionList()
@@ -128,34 +138,6 @@ contract Registry is AccessControlRci, IRegistry{
     returns (string[] memory extensionNames)
     {
         extensionNames = _extensionNames;
-    }
-
-    function getCompetitionActive(string calldata competitionName)
-    view external override
-    returns (bool active)
-    {
-        active = _competition[competitionName].active;
-    }
-
-    function getCompetitionAddress(string calldata competitionName)
-    view external override
-    returns (address competitionAddress)
-    {
-        competitionAddress = _competition[competitionName].competitionAddress;
-    }
-
-    function getCompetitionRulesLocation(string calldata competitionName)
-    view external override
-    returns (bytes32 rulesLocation)
-    {
-        rulesLocation = _competition[competitionName].rulesLocation;
-    }
-
-    function getTokenAddress()
-    view external override
-    returns (address token)
-    {
-        token = _token;
     }
 
     function getExtensionAddress(string calldata extensionName)
@@ -177,6 +159,21 @@ contract Registry is AccessControlRci, IRegistry{
     returns (bytes32 informationLocation)
     {
         informationLocation = _extension[extensionName].informationLocation;
+    }
+
+    function stringCompare(string storage s1, string calldata s2)
+    view internal
+    returns (bool same)
+    {
+        same = keccak256(abi.encodePacked(s1)) == keccak256(abi.encodePacked(s2));
+    }
+
+
+    function stringCompareNull(string storage s1)
+    view internal
+    returns (bool same)
+    {
+        same = keccak256(abi.encodePacked(s1)) == keccak256(abi.encodePacked(""));
     }
 }
 

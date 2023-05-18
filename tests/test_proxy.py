@@ -1,5 +1,5 @@
 from utils_for_testing import *
-from brownie import Contract, Token, Competition,ProxyAdmin, TransparentUpgradeableProxy, BadCompetition3, reverts, accounts
+from brownie import Contract, Token, Competition, BadCompetition3, reverts, accounts
 
 
 class TestProxy:
@@ -7,29 +7,31 @@ class TestProxy:
     def setup(self):
         self.admin = accounts[0]
         self.participants = accounts[1:]
-        self.token = Token.deploy("RockCap Token", "RCP", int(Decimal('100000000e18')), {'from': self.admin})
+        self.token = Token.deploy({'from': self.admin})
+        self.token.initialize("RockCap Token", "RCP", int(Decimal('100e12')), self.admin, {'from': self.admin})
         self.comp_logic = Competition.deploy({'from': self.admin})
 
-        stake_threshold = int(Decimal('10e18'))
-        challenge_rewards_threshold = int(Decimal('10e18'))
+        stake_threshold = int(Decimal('10e6'))
+        challenge_rewards_threshold = int(Decimal('0e6'))
 
-        self.proxy_admin = ProxyAdmin.deploy({'from': self.admin})
+        self.proxy_admin = op.ProxyAdmin.deploy({'from': self.admin})
         data = self.comp_logic.initialize.encode_input(stake_threshold, challenge_rewards_threshold, self.token)
-        self.proxy = TransparentUpgradeableProxy.deploy(self.comp_logic, self.proxy_admin, data, {'from': self.admin})
+        self.proxy = op.TransparentUpgradeableProxy.deploy(self.comp_logic, self.proxy_admin, data, {'from': self.admin})
 
-        TransparentUpgradeableProxy.remove(self.proxy)
-        combined_abi = TransparentUpgradeableProxy.abi + Competition.abi
+        op.TransparentUpgradeableProxy.remove(self.proxy)
+        combined_abi = op.TransparentUpgradeableProxy.abi + Competition.abi
         self.competition = Contract.from_abi("doesnotmatter", self.proxy, combined_abi)
 
-        self.token.authorizeCompetition(self.competition, {'from': self.admin})
+        self.token.authorizeCompetition(self.competition, "RciComp", {'from': self.admin})
 
         verify(stake_threshold, self.competition.getStakeThreshold())
         verify(challenge_rewards_threshold, self.competition.getRewardsThreshold())
         verify(0, self.competition.getLatestChallengeNumber())
         verify(4, self.competition.getPhase(0))
-        verify(Decimal('0.2'), uint_to_float(self.competition.getChallengeRewardsPercentageInWei()))
-        verify(Decimal('0.6'), uint_to_float(self.competition.getTournamentRewardsPercentageInWei()))
         verify(self.token, self.competition.getTokenAddress())
+
+        # Open challenge
+        self.competition.openChallenge(getHash(), getHash(), 0, 0, {'from': self.admin})
 
     def test_admin(self):
         with reverts():
@@ -49,9 +51,10 @@ class TestProxy:
 
         # Put some stake in for testing. We will later upgrade to a contract that will
         # always return 1 when `getStake` is called.
-        self.token.transfer(p, 500, {'from': self.admin})
+        stake = int(Decimal("100e6"))
+        self.token.transfer(p, stake, {'from': self.admin})
         self.token.setStake(self.competition, self.token.balanceOf(p), {'from': p})
-        verify(500, self.competition.getStake(p))
+        verify(stake, self.competition.getStake(p))
 
         with reverts():  # unauthorized call
             self.proxy_admin.upgrade(self.competition, new_impl, {'from': non_admin})
@@ -63,7 +66,7 @@ class TestProxy:
         # now point back to previous implementation
         self.proxy_admin.upgrade(self.competition, self.comp_logic, {'from': self.admin})
         verify(self.comp_logic, self.proxy_admin.getProxyImplementation(self.competition))
-        verify(500, self.competition.getStake(p))
+        verify(stake, self.competition.getStake(p))
 
     def test_upgrade_and_call(self):
         p = self.participants[1]
@@ -91,7 +94,7 @@ class TestProxy:
         verify(True, self.competition.hasRole(self.competition.RCI_CHILD_ADMIN(), admin_2))
 
     def test_change_proxy_admin(self):
-        new_admin = ProxyAdmin.deploy({'from': self.admin})
+        new_admin = op.ProxyAdmin.deploy({'from': self.admin})
         non_owner = self.participants[0]
         new_impl = BadCompetition3.deploy({'from': self.admin})
         data = self.comp_logic.increaseStake.encode_input(self.participants[-1], 1)

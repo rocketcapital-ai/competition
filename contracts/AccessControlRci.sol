@@ -1,32 +1,20 @@
-pragma solidity 0.8.4;
+pragma solidity ^0.8.4;
 
 // SPDX-License-Identifier: MIT
 
-import './standard/access/AccessControl.sol';
+import 'OpenZeppelin/openzeppelin-contracts@4.8.0/contracts/access/AccessControlEnumerable.sol';
 
-abstract contract AccessControlRci is AccessControl{
+abstract contract AccessControlRci is AccessControlEnumerable{
     bytes32 public constant RCI_MAIN_ADMIN = keccak256('RCI_MAIN_ADMIN');
     bytes32 public constant RCI_CHILD_ADMIN = keccak256('RCI_CHILD_ADMIN');
 
-    modifier onlyMainAdmin()
-    {
-        require(hasRole(RCI_MAIN_ADMIN, msg.sender), "Caller is unauthorized.");
-        _;
-    }
-
-    modifier onlyAdmin()
-    {
-        require(hasRole(RCI_CHILD_ADMIN, msg.sender), "Caller is unauthorized.");
-        _;
-    }
-
-    function _initializeRciAdmin()
+    function _initializeRciAdmin(address admin_)
     internal
     {
-        _setupRole(RCI_MAIN_ADMIN, msg.sender);
+        _setupRole(RCI_MAIN_ADMIN, admin_);
         _setRoleAdmin(RCI_MAIN_ADMIN, RCI_MAIN_ADMIN);
 
-        _setupRole(RCI_CHILD_ADMIN, msg.sender);
+        _setupRole(RCI_CHILD_ADMIN, admin_);
         _setRoleAdmin(RCI_CHILD_ADMIN, RCI_MAIN_ADMIN);
     }
 }

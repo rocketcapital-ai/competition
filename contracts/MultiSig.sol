@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.4;
+pragma solidity ^0.8.4;
 
-import "./standard/utils/Address.sol";
+import "OpenZeppelin/openzeppelin-contracts@4.8.0/contracts/utils/Address.sol";
 
 /// @title Multisignature wallet - Allows multiple parties to agree on transactions before execution.
 /// @dev Adapted from Multisignature wallet by Stefan George - <stefan.george@consensys.net>
