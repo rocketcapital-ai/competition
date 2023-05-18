@@ -1,5 +1,9 @@
-# Documentation
-Further documentation can be found [here](https://rocket-capital-investment.gitbook.io/competition-dapp/).
+# Upgradeability
+
+The Token and Competition contracts have been made upgradeable to support a roadmap for deployment before audit.
+(Deployments were made on 15 May 2023).
+
+Once audit and contract revisions have been made, contracts will be upgraded and upgradeability will be locked, for example via renouncing of admin roles for upgrading. The contracts will not be upgradeable after that.
 
 # Usage
 ## Install Brownie
@@ -27,21 +31,12 @@ A csv file with 3 columns, historical challenge number, staker addresses and the
 
 An archive node is required for this test. You may obtain access to one by creating an account on an archive node provider such as Moralis, Chainstack, Alchemy, Quicknode, Infura, Ankr, amongst others.  
 
-Run example:
->brownie test tests/test_fork_competition_child_token_proxy.py --network polygon_dev
+Examples:
 ### Run All Tests
 `brownie test`
 
 ### Run Specific Test
 `brownie test tests/<test-file-name>`
-
-#### Useful flags
-`--coverage` shows an evaluation of test coverage by function for each contract.
-
-`--stateful [true,false]` 
-
-True: runs only `test_competition_state.py` and `test_token_state.py`.
-
 
 ## Compile All Contracts
 `brownie compile --all`
