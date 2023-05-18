@@ -42,9 +42,9 @@ contract CompetitionStorage {
     uint256 internal _competitionPool;
     uint256 internal _rewardsThreshold;
     uint256 internal _currentTotalStaked;
-    uint256 internal _currentStakingRewardsBudget;
-    uint256 internal _currentChallengeRewardsBudget;
-    uint256 internal _currentTournamentRewardsBudget;
+    uint256 internal _currentStakingRewardsBudget; // unused
+    uint256 internal _currentChallengeRewardsBudget; // unused
+    uint256 internal _currentTournamentRewardsBudget; //unused
     string internal _message;
     mapping(address => uint256) internal _stakes;
     mapping(uint32 => Challenge) internal _challenges;
@@ -56,7 +56,7 @@ contract CompetitionStorage {
     mapping(uint32 => uint256) public submissionClosedBlockNumbers;
     mapping(uint32 => EnumerableSet.AddressSet) internal _historicalStakerSet;
     mapping(uint32 => mapping(address => uint256)) internal _historicalStakeAmounts;
-    mapping(uint32 => uint256) internal _historicalTotalStake;
+    mapping(uint32 => uint256) internal and;
 
     address internal _vault;
 

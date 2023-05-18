@@ -89,30 +89,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         emit StakeDecreased(staker, amountToken);
     }
 
-//    function submitNewPredictions(bytes32 submissionHash)
-//    external override
-//    returns (uint32 challengeNumber)
-//    {
-//        uint256 currentBal = _stakes[msg.sender];
-//        require(currentBal >= _stakeThreshold, "STBL");
-//        challengeNumber = _updateSubmission(bytes32(0), submissionHash);
-//        EnumerableSet.add(_challenges[challengeNumber].submitters, msg.sender);
-////        _challenges[challengeNumber].submitterInfo[msg.sender].staked = currentBal;
-//    }
-
-//    function updateSubmission(bytes32 oldSubmissionHash, bytes32 newSubmissionHash)
-//    external override
-//    returns (uint32 challengeNumber)
-//    {
-//        require(oldSubmissionHash != bytes32(0), "NOSB");
-//        challengeNumber = _updateSubmission(oldSubmissionHash, newSubmissionHash);
-//
-//        if (newSubmissionHash == bytes32(0)){
-//            EnumerableSet.remove(_challenges[challengeNumber].submitters, msg.sender);
-////            _challenges[challengeNumber].submitterInfo[msg.sender].staked = 0;
-//        }
-//    }
-
     function submit(address staker, bytes32 submissionHash)
     external override
     returns (uint32 challengeNumber)
@@ -235,8 +211,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-//        require(_challenges[challengeNumber].phase == 1, "CHCL");
-//        require(oldDatasetHash != bytes32(0), "No dataset.");
         success = _updateDataset(challengeNumber, oldDatasetHash, newDatasetHash);
     }
 
@@ -245,8 +219,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-//        require(_challenges[challengeNumber].phase == 1, "CHCL");
-//        require(oldKeyHash != bytes32(0), "No key.");
         success = _updateKey(challengeNumber, oldKeyHash, newKeyHash);
     }
 
@@ -383,8 +355,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         _burnedAmount += totalBurnAmount;
         _currentTotalStaked -= totalBurnAmount;
         success = true;
-
-//        _logAmountsBurned(challengeNumber, totalBurnAmount);
     }
 
     function _paySingleAddress(uint32 challengeNumber, address submitter, uint256 stakingReward,
@@ -412,7 +382,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     function _burnSingleAddress(uint32 challengeNumber, address submitter, uint256 burnAmount)
     private
     {
-//        require(_stakes[submitter] >= burnAmount, 'Underflow error.');
         _stakes[submitter] -= burnAmount;
         uint256 alreadyBurned = _challenges[challengeNumber].submitterInfo[submitter].tokensBurned;
         if (burnAmount > 0){
@@ -421,9 +390,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
 
         emit Burned(challengeNumber, submitter, burnAmount);
     }
-
-    // reset burn and payments
-
 
     function _logRewardsPaid(uint32 challengeNumber, uint256 totalStakingAmount, uint256 totalChallengeAmount, uint256 totalTournamentAmount)
     private
@@ -477,7 +443,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         require((2 < phase) && (phase < 5)
                     && ((phase-1) == _challenges[challengeNumber].phase),
             "WGPH" );
-//        require(, "WGPH");
         _challenges[challengeNumber].phase = phase;
 
         success = true;
@@ -671,7 +636,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     view external override
     returns (uint256 staked)
     {
-//        staked = _challenges[challengeNumber].submitterInfo[participant].staked;
         staked = _historicalStakeAmounts[challengeNumber][participant];
     }
 
@@ -846,7 +810,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     external override
     returns (bool success)
     {
-//        require(_challenges[_challengeCounter].phase >= 3, "WGPH");
         uint256 currentCompPoolAmt = _competitionPool;
         _competitionPool = currentCompPoolAmt + amountToken;
         success = _token.transferFrom(msg.sender, address(this), amountToken);

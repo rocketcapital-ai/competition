@@ -5,6 +5,9 @@ The Token and Competition contracts have been made upgradeable to support a road
 
 Once audit and contract revisions have been made, contracts will be upgraded and upgradeability will be locked, for example via renouncing of admin roles for upgrading. The contracts will not be upgradeable after that.
 
+# Further Documentation
+Found [here](https://docs.rocketcapital.ai/competition-dapp/overviews/competition-overview).
+
 # Usage
 ## Install Brownie
 `pipx install eth-brownie`

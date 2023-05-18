@@ -65,7 +65,6 @@ contract Token is Registry, Initializable
     {
         require(getCompetitionActiveByAddress(target), "Competition inactive.");
         uint256 currentStake = ICompetition(target).getStake(msg.sender);
-//        require(currentStake != amountToken, "Token - setStake: Your stake is already set to this amount.");
         if (amountToken > currentStake){
             increaseStake(target, amountToken - currentStake);
         } else{
@@ -79,7 +78,7 @@ contract Token is Registry, Initializable
     returns (bool success)
     {
         ICompetition(target).submit(msg.sender, hash);
-        require(setStake(target, amountToken), "Set stake unsuccessful.");
+        require(setStake(target, amountToken), "Set stake unsuccessful."); // competition authorization checked via setStake callby
         success = true;
     }
 
