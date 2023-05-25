@@ -56,7 +56,7 @@ contract CompetitionStorage {
     mapping(uint32 => uint256) public submissionClosedBlockNumbers;
     mapping(uint32 => EnumerableSet.AddressSet) internal _historicalStakerSet;
     mapping(uint32 => mapping(address => uint256)) internal _historicalStakeAmounts;
-    mapping(uint32 => uint256) internal and;
+    mapping(uint32 => uint256) internal _historicalTotalStake;
 
     address internal _vault;
 

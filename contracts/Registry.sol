@@ -78,8 +78,8 @@ abstract contract Registry is IRegistry, TransferFeeToken{
     function changeExtensionInfoLocation(string calldata extensionName, bytes32 newLocation)
     external override onlyRole(RCI_CHILD_ADMIN)
     {
-        require(_extension[extensionName].extensionAddress != address(0), "Competition does not exist. Use function 'registerNewCompetition' instead.");
-        require(newLocation != bytes32(0), "Cannot set to 0 address.");
+        require(_extension[extensionName].extensionAddress != address(0), "Extension does not exist. Use function 'registerNewExtension' instead.");
+        require(newLocation != bytes32(0), "Cannot set information location to 0.");
         _extension[extensionName].informationLocation = newLocation;
 
         emit ExtensionInfoLocationChanged(extensionName, newLocation);
