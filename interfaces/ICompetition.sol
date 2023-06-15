@@ -97,19 +97,17 @@ interface ICompetition{
 
     /**
     * @dev Called only by authorized admin to update the IPFS reference for the dataset of a particular challenge.
-    * @param oldDatasetHash IPFS reference hash where previous dataset for this challenge is stored. This is the IPFS CID less the 1220 prefix.
     * @param newDatasetHash IPFS reference hash where new dataset for this challenge is stored. This is the IPFS CID less the 1220 prefix.
     * @return success True if the operation completed successfully.
     **/
-    function updateDataset(bytes32 oldDatasetHash, bytes32 newDatasetHash) external returns (bool success);
+    function updateDataset(bytes32 newDatasetHash) external returns (bool success);
 
     /**
     * @dev Called only by authorized admin to update the IPFS reference for the key of a particular challenge.
-    * @param oldKeyHash IPFS reference hash where previous key for this challenge is stored. This is the IPFS CID less the 1220 prefix.
     * @param newKeyHash IPFS reference hash where new key for this challenge is stored. This is the IPFS CID less the 1220 prefix.
     * @return success True if the operation completed successfully.
     **/
-    function updateKey(bytes32 oldKeyHash, bytes32 newKeyHash) external returns (bool success);
+    function updateKey(bytes32 newKeyHash) external returns (bool success);
 
     /**
     * @dev Called only by authorized admin to stop allowing submissions for a particular challenge.

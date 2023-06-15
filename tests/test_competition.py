@@ -33,6 +33,9 @@ class TestCompetition:
         self.vault = "0x" + (1234567).to_bytes(20, "big").hex()
         self.vault2 = "0x" + (1234566).to_bytes(20, "big").hex()
 
+        self.old_dataset_hashes = []
+        self.old_public_key_hashes = []
+
         # airdrop to participants
         total_airdrop = int(Decimal(0.01) * Decimal(self.token.totalSupply()))
         single_airdrop = total_airdrop // (len(accounts) - 1)
@@ -137,8 +140,8 @@ class TestCompetition:
         with reverts(): self.competition.updateRewardsThreshold(1, {'from': non_admin})
         with reverts(): self.competition.updateStakeThreshold(1, {'from': non_admin})
         with reverts(): self.competition.openChallenge(getHash(), getHash(), getTimestamp(), getTimestamp(), {'from': non_admin})
-        with reverts(): self.competition.updateDataset(self.competition.getDatasetHash(challenge_number), getHash(), {'from': non_admin})
-        with reverts(): self.competition.updateKey(self.competition.getKeyHash(challenge_number), getHash(), {'from': non_admin})
+        with reverts(): self.competition.updateDataset(getHash(), {'from': non_admin})
+        with reverts(): self.competition.updateKey(getHash(), {'from': non_admin})
         with reverts(): self.competition.updatePrivateKey(challenge_number, getHash(), {'from': non_admin})
         with reverts(): self.competition.closeSubmission({'from': non_admin})
         with reverts(): self.competition.submitResults(getHash(), {'from': non_admin})
@@ -211,8 +214,6 @@ class TestCompetition:
 
         for challenge_round in self.challenge_list:
             print('\n##### Processing challenge {} of {}. #####'.format(challenge_round, self.challenge_list[-1]))
-            dataset_hash = getHash()
-            key_hash = getHash()
 
             # Sponsor
             current_pool = self.competition.getCompetitionPool()
@@ -255,21 +256,20 @@ class TestCompetition:
             new_dataset_hash = getHash()
             new_key_hash = getHash()
 
-            self.execute_fn(self.competition, self.competition.updateDataset, [bytes([0] * 32), new_dataset_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
-            self.execute_fn(self.competition, self.competition.updateDataset, [dataset_hash, dataset_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
-            self.execute_fn(self.competition, self.competition.updateDataset, [new_dataset_hash, new_dataset_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
-
-            self.execute_fn(self.competition, self.competition.updateDataset, [dataset_hash, new_dataset_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
+            self.execute_fn(self.competition, self.competition.updateDataset, [dataset_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
+            self.execute_fn(self.competition, self.competition.updateDataset, [new_dataset_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
             verify(new_dataset_hash, self.competition.getDatasetHash(challenge_number).hex())
-            self.execute_fn(self.competition, self.competition.updateDataset, [dataset_hash, new_dataset_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
+            self.old_dataset_hashes.append(new_dataset_hash)
+            for odh in self.old_dataset_hashes:
+                self.execute_fn(self.competition, self.competition.updateDataset, [odh, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
 
-            self.execute_fn(self.competition, self.competition.updateKey, [bytes([0] * 32), new_key_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
-            self.execute_fn(self.competition, self.competition.updateKey, [key_hash, key_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
-            self.execute_fn(self.competition, self.competition.updateKey, [new_key_hash, new_key_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
+            self.execute_fn(self.competition, self.competition.updateKey, [key_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
 
-            self.execute_fn(self.competition, self.competition.updateKey, [key_hash, new_key_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
+            self.execute_fn(self.competition, self.competition.updateKey, [new_key_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
             verify(new_key_hash, self.competition.getKeyHash(challenge_number).hex())
-            self.execute_fn(self.competition, self.competition.updateKey, [key_hash, new_key_hash, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
+            self.old_public_key_hashes.append(new_key_hash)
+            for opkh in self.old_public_key_hashes:
+                self.execute_fn(self.competition, self.competition.updateKey, [opkh, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
 
             # Update deadlines
             new_deadlines = [getTimestamp(), getTimestamp(), getTimestamp(), getTimestamp()]
@@ -568,12 +568,12 @@ class TestCompetition:
                 self.execute_fn(self.competition, self.competition.openChallenge,
                                 [getHash(), getHash(), getTimestamp(), getTimestamp(), {'from': self.admin}],
                                 self.use_multi_admin, exp_revert=True)
-                # self.execute_fn(self.competition, self.competition.updateDataset,
-                #                 [self.competition.getDatasetHash(challenge_number), getHash(), {'from': self.admin}],
-                #                 self.use_multi_admin, exp_revert=True)
-                # self.execute_fn(self.competition, self.competition.updateKey,
-                #                 [self.competition.getKeyHash(challenge_number), getHash(), {'from': self.admin}],
-                #                 self.use_multi_admin, exp_revert=True)
+                self.execute_fn(self.competition, self.competition.updateDataset,
+                                [getHash(), {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=True)
+                self.execute_fn(self.competition, self.competition.updateKey,
+                                [getHash(), {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=True)
                 self.execute_fn(self.competition, self.competition.closeSubmission, [{'from': self.admin}],
                                 self.use_multi_admin, exp_revert=True)
                 self.execute_fn(self.competition, self.competition.submitResults, [getHash(), {'from': self.admin}],
@@ -627,12 +627,12 @@ class TestCompetition:
                 self.execute_fn(self.competition, self.competition.openChallenge,
                                 [getHash(), getHash(), getTimestamp(), getTimestamp(), {'from': self.admin}],
                                 self.use_multi_admin, exp_revert=True)
-                # self.execute_fn(self.competition, self.competition.updateDataset,
-                #                 [self.competition.getDatasetHash(challenge_number), getHash(), {'from': self.admin}],
-                #                 self.use_multi_admin, exp_revert=True)
-                # self.execute_fn(self.competition, self.competition.updateKey,
-                #                 [self.competition.getKeyHash(challenge_number), getHash(), {'from': self.admin}],
-                #                 self.use_multi_admin, exp_revert=True)
+                self.execute_fn(self.competition, self.competition.updateDataset,
+                                [getHash(), {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=True)
+                self.execute_fn(self.competition, self.competition.updateKey,
+                                [getHash(), {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=True)
                 self.execute_fn(self.competition, self.competition.closeSubmission, [{'from': self.admin}],
                                 self.use_multi_admin, exp_revert=True)
                 self.execute_fn(self.competition, self.competition.advanceToPhase, [3, {'from': self.admin}],
@@ -764,12 +764,12 @@ class TestCompetition:
                 self.execute_fn(self.token, self.token.stakeAndSubmit,
                                 [self.competition, staked, getHash(), {'from': s}],
                                 use_multi_admin=False, exp_revert=True)
-                # self.execute_fn(self.competition, self.competition.updateDataset,
-                #                 [self.competition.getDatasetHash(challenge_number), getHash(), {'from': self.admin}],
-                #                 self.use_multi_admin, exp_revert=True)
-                # self.execute_fn(self.competition, self.competition.updateKey,
-                #                 [self.competition.getKeyHash(challenge_number), getHash(), {'from': self.admin}],
-                #                 self.use_multi_admin, exp_revert=True)
+                self.execute_fn(self.competition, self.competition.updateDataset,
+                                [getHash(), {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=True)
+                self.execute_fn(self.competition, self.competition.updateKey,
+                                [getHash(), {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=True)
                 self.execute_fn(self.competition, self.competition.closeSubmission, [{'from': self.admin}],
                                 self.use_multi_admin, exp_revert=True)
                 self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}],

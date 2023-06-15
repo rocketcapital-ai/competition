@@ -8,6 +8,7 @@ import './../interfaces/IToken.sol';
 import './CompetitionStorage.sol';
 import './AccessControlRci.sol';
 import "OpenZeppelin/openzeppelin-contracts@4.8.0/contracts/proxy/utils/Initializable.sol";
+import './UniqueMappings.sol';
 
 /**
  * @title RCI Tournament(Competition) Contract
@@ -16,7 +17,7 @@ import "OpenZeppelin/openzeppelin-contracts@4.8.0/contracts/proxy/utils/Initiali
  * @dev IPFS hash format: Hash Identifier (2 bytes), Actual Hash (May eventually take on other formats but currently 32 bytes)
  *
  */
-contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Initializable, ICompetitionV2 {
+contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Initializable, ICompetitionV2, UniqueMappings {
 
     function initialize(uint256 stakeThreshold_, uint256 rewardsThreshold_, address tokenAddress_)
     external
@@ -195,8 +196,8 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         _challenges[challengeNumber].phase = 1;
         _challengeCounter = challengeNumber;
 
-        _updateDataset(challengeNumber, bytes32(0), datasetHash);
-        _updateKey(challengeNumber, bytes32(0), keyHash);
+        _updateDataset(challengeNumber, datasetHash);
+        _updateKey(challengeNumber, keyHash);
 
         _updateDeadlines(challengeNumber, 0, submissionCloseDeadline);
         _updateDeadlines(challengeNumber, 1, nextChallengeDeadline);
@@ -206,41 +207,47 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         emit ChallengeOpened(challengeNumber);
     }
 
-    function updateDataset(bytes32 oldDatasetHash, bytes32 newDatasetHash)
+    function updateDataset(bytes32 newDatasetHash)
     external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-        success = _updateDataset(challengeNumber, oldDatasetHash, newDatasetHash);
+        success = _updateDataset(challengeNumber, newDatasetHash);
     }
 
-    function updateKey(bytes32 oldKeyHash, bytes32 newKeyHash)
+    function updateKey(bytes32 newKeyHash)
     external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
         uint32 challengeNumber = _challengeCounter;
-        success = _updateKey(challengeNumber, oldKeyHash, newKeyHash);
+        success = _updateKey(challengeNumber, newKeyHash);
     }
 
-    function _updateDataset(uint32 challengeNumber, bytes32 oldDatasetHash, bytes32 newDatasetHash)
+    function _updateDataset(uint32 challengeNumber, bytes32 newDatasetHash)
     private
     returns (bool success)
     {
+        bytes32 oldDatasetHash = _challenges[challengeNumber].dataset;
+        require(_challenges[challengeNumber].phase == 1, "WGPH");
         require(oldDatasetHash != newDatasetHash, "HHST");
-        require(_challenges[challengeNumber].dataset == oldDatasetHash, "HHER");
+        require(!_datasetHashes[newDatasetHash], "DTST");
         _challenges[challengeNumber].dataset = newDatasetHash;
+        _datasetHashes[newDatasetHash] = true;
         success = true;
 
         emit DatasetUpdated(challengeNumber, oldDatasetHash, newDatasetHash);
     }
 
-    function _updateKey(uint32 challengeNumber, bytes32 oldKeyHash, bytes32 newKeyHash)
+    function _updateKey(uint32 challengeNumber, bytes32 newKeyHash)
     private
     returns (bool success)
     {
+        bytes32 oldKeyHash = _challenges[challengeNumber].key;
+        require(_challenges[challengeNumber].phase == 1, "WGPH");
         require(oldKeyHash != newKeyHash, "HHST");
-        require(_challenges[challengeNumber].key == oldKeyHash, "HHER");
+        require(!_publicKeyHashes[newKeyHash], "PBKY");
         _challenges[challengeNumber].key = newKeyHash;
+        _publicKeyHashes[newKeyHash] = true;
         success = true;
 
         emit KeyUpdated(challengeNumber, oldKeyHash, newKeyHash);
