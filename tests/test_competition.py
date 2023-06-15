@@ -468,7 +468,19 @@ class TestCompetition:
             ########## PHASE 2 ##########
             #############################
             print('--- Phase 2 ---')
+
             self.execute_fn(self.competition, self.competition.closeSubmission, [{'from': self.admin}], self.use_multi_admin, exp_revert=False)
+            # Test cannot advance to phase 4
+            self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
+            # Test cannot retreat to phase 0
+            self.execute_fn(self.competition, self.competition.retreatToPhase, [0, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
+            # Test can retreat to phase 1
+            self.execute_fn(self.competition, self.competition.retreatToPhase, [1, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
+            verify(1, self.competition.getPhase(challenge_number))
+
+            # Close submissions and move to phase 2
+            self.execute_fn(self.competition, self.competition.closeSubmission, [{'from': self.admin}], self.use_multi_admin, exp_revert=False)
+
             verify(2, self.competition.getPhase(challenge_number))
             verify(len(chain) - 1, self.competition.submissionClosedBlockNumbers(challenge_number))
             self.submission_closed_block_numbers[challenge_number] = self.competition.submissionClosedBlockNumbers(challenge_number)
@@ -611,6 +623,23 @@ class TestCompetition:
             self.execute_fn(self.competition, self.competition.advanceToPhase, [3, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
             verify(3, self.competition.getPhase(challenge_number))
             challenge_number = self.competition.getLatestChallengeNumber()
+
+            # Test cannot advance to phase 5
+            self.execute_fn(self.competition, self.competition.advanceToPhase, [5, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=True)
+            # Test cannot retreat to phase 1
+            self.execute_fn(self.competition, self.competition.retreatToPhase, [1, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=True)
+            # Test can retreat to phase 2
+            self.execute_fn(self.competition, self.competition.retreatToPhase, [2, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=False)
+            verify(2, self.competition.getPhase(challenge_number))
+
+            # Advance to phase 3
+            self.execute_fn(self.competition, self.competition.advanceToPhase, [3, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=False)
+            verify(3, self.competition.getPhase(challenge_number))
+
 
             self.unauthorized_calls_check(non_admin=participants[-1], admin=self.admin)
 
@@ -760,6 +789,24 @@ class TestCompetition:
             print('--- Phase 4 ---')
             self.staking_submissions_restricted_check(participants[-1])
             self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
+            verify(4, self.competition.getPhase(challenge_number))
+
+            # Test cannot advance to phase 5
+            self.execute_fn(self.competition, self.competition.advanceToPhase, [5, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=True)
+            # Test cannot retreat to phase 2
+            self.execute_fn(self.competition, self.competition.retreatToPhase, [2, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=True)
+            # Test can retreat to phase 3
+            self.execute_fn(self.competition, self.competition.retreatToPhase, [3, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=False)
+            verify(3, self.competition.getPhase(challenge_number))
+
+            # Advance to phase 4
+            self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}],
+                           self.use_multi_admin, exp_revert=False)
+            verify(4, self.competition.getPhase(challenge_number))
+
             self.unauthorized_calls_check(non_admin=participants[-1], admin=self.admin)
 
             # Test authorized actions expected to fail

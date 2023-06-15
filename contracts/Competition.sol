@@ -460,6 +460,19 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         success = true;
     }
 
+    function retreatToPhase(uint8 phase)
+    external override onlyRole(RCI_CHILD_ADMIN)
+    returns (bool success)
+    {
+        uint32 challengeNumber = _challengeCounter;
+        require((0 < phase) && (phase < 4)
+                    && ((phase + 1) == _challenges[challengeNumber].phase),
+            "WGPH" );
+        _challenges[challengeNumber].phase = phase;
+
+        success = true;
+    }
+
     function moveRemainderToPool()
     external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)

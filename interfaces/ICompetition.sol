@@ -168,11 +168,19 @@ interface ICompetition{
     * @dev Called only by an authorized admin to advance to the next phase.
     * @dev Due to the block gas limit rewards payments may need to be split up into multiple function calls.
     * @dev In other words, payStakingRewards and payChallengeAndTournamentRewards may need to be called multiple times to complete all required payments.
-    * @dev This function is used to advance to phase 3 after staking rewards payments have complemted or to phase 4 after challenge and tournament rewards payments have completed.
+    * @dev This function is used to advance to phase 3 after staking rewards payments have completed or to phase 4 after challenge and tournament rewards payments have completed.
     * @param phase The phase to advance to.
     * @return success True if the operation completed successfully.
     **/
     function advanceToPhase(uint8 phase) external returns (bool success);
+
+    /**
+    * @dev Called only by an authorized admin to retreat to the previous phase.
+    * @dev This function can be used to retreat to phases 1, 2, or 3.
+    * @param phase The phase to retreat to.
+    * @return success True if the operation completed successfully.
+    **/
+    function retreatToPhase(uint8 phase) external returns (bool success);
 
     /**
     * @dev Called only by an authorized admin, to move any tokens sent to this contract without using the 'sponsor' or 'setStake'/'increaseStake' methods into the competition pool.
