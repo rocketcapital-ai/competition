@@ -337,6 +337,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
 
         _competitionPool -= totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
         _currentTotalStaked += totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
+        challengePayments[challengeNumber] += totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
         success = true;
 
         _logRewardsPaid(challengeNumber, totalStakingAmount, totalChallengeAmount, totalTournamentAmount);
@@ -361,6 +362,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         // allow for reverting on underflow
         _burnedAmount += totalBurnAmount;
         _currentTotalStaked -= totalBurnAmount;
+        challengeBurns[challengeNumber] += totalBurnAmount;
         success = true;
     }
 
@@ -450,6 +452,9 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         require((2 < phase) && (phase < 5)
                     && ((phase-1) == _challenges[challengeNumber].phase),
             "WGPH" );
+        if (phase == 4){
+            require((challengePayments[challengeNumber] > 0) && (challengeBurns[challengeNumber] > 0), "PYBN");
+        }
         _challenges[challengeNumber].phase = phase;
 
         success = true;

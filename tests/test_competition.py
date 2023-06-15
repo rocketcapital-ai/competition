@@ -706,12 +706,20 @@ class TestCompetition:
             challenge_scores.append(int(random.random() * 1e6))
             tournament_scores.append(int(random.random() * 1e6))
 
+            # should not be able to move to phase 4 at this point, when no payments have been made.
+            self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=True)
+
             self.execute_fn(self.competition, self.competition.payRewards,
                             [winners[:-1], staking_rewards, challenge_rewards, tournament_rewards, {'from': self.admin}],
                             self.use_multi_admin, exp_revert=True)
             self.execute_fn(self.competition, self.competition.payRewards,
                             [winners, staking_rewards, challenge_rewards, tournament_rewards, {'from': self.admin}],
                             self.use_multi_admin, exp_revert=False)
+
+            # should not be able to move to phase 4 at this point, when no burns have been made.
+            self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}],
+                            self.use_multi_admin, exp_revert=True)
 
             self.execute_fn(self.competition, self.competition.burn,
                             [winners[:-1], burn_amounts, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
