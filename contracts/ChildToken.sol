@@ -5,6 +5,8 @@ pragma solidity ^0.8.4;
 import "./Token.sol";
 
 contract ChildToken is Token  {
+    using Address for address;
+
     address internal _fxManager;
     address internal _connectedToken;
 
@@ -16,6 +18,7 @@ contract ChildToken is Token  {
     external
     onlyRole(RCI_CHILD_ADMIN)
     {
+        require(fxManager_.isContract(), "Invalid address.");
         _fxManager = fxManager_;
     }
 
@@ -30,6 +33,7 @@ contract ChildToken is Token  {
     external
     onlyRole(RCI_CHILD_ADMIN)
     {
+        require(connectedToken_.isContract(), "Invalid address.");
         _connectedToken = connectedToken_;
     }
 
