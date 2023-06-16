@@ -66,7 +66,7 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     {
         uint32 challengeNumber = _challengeCounter;
         require(msg.sender == address(_token), "TKCL");
-        require(_challenges[_challengeCounter].phase == 1, "STUK");
+        require(_challenges[challengeNumber].phase == 1, "STUK");
         // allow for amountToken = 0 so that `stakeAndSubmit` can be called with the same stake.
         // users might want to set their stakes to the same amount while changing their submission.
 
