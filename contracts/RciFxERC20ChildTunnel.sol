@@ -13,12 +13,12 @@ contract RciFxERC20ChildTunnel is FxBaseChildTunnel {
     string public constant SUFFIX_NAME = " (FXERC20)";
     string public constant PREFIX_SYMBOL = "fx";
 
-    // event for token mapping
-    event TokenMapped(address indexed rootToken, address indexed childToken);
     // root to child token
     mapping(address => address) public rootToChildToken;
     // token template
     address public immutable tokenAddress;
+    // event for token mapping
+    event TokenMapped(address indexed rootToken, address indexed childToken);
 
     constructor(address _fxChild, address _tokenAddress) FxBaseChildTunnel(_fxChild) {
         tokenAddress = _tokenAddress;

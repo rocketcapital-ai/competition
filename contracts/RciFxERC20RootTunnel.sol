@@ -15,6 +15,9 @@ contract RciFxERC20RootTunnel is FxBaseRootTunnel {
     bytes32 public constant DEPOSIT = keccak256("DEPOSIT");
     bytes32 public constant MAP_TOKEN = keccak256("MAP_TOKEN");
 
+    mapping(address => address) public rootToChildTokens;
+    address internal _childTokenAddress;
+
     event TokenMappedERC20(address indexed rootToken, address indexed childToken);
     event FxWithdrawERC20(
         address indexed rootToken,
@@ -28,10 +31,6 @@ contract RciFxERC20RootTunnel is FxBaseRootTunnel {
         address indexed userAddress,
         uint256 amount
     );
-
-    mapping(address => address) public rootToChildTokens;
-    address internal _childTokenAddress;
-
 
     constructor(
         address _checkpointManager,

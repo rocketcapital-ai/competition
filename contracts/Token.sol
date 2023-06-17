@@ -26,6 +26,24 @@ contract Token is Registry, Initializable
         _initializeRciAdmin(admin_);
     }
 
+    function stakeAndSubmit(address target, uint256 amountToken, bytes32 hash)
+    external
+    returns (bool success)
+    {
+        ICompetition(target).submit(msg.sender, hash);
+        require(setStake(target, amountToken), "Set stake unsuccessful.");
+        // competition authorization checked via setStake call
+        success = true;
+    }
+
+    function getStake(address target, address staker)
+    external view
+    returns (uint256 stake)
+    {
+        require(getCompetitionActiveByAddress(target), "Competition inactive.");
+        stake = ICompetition(target).getStake(staker);
+    }
+
     function increaseStake(address target, uint256 amountToken)
     public
     returns (bool success)
@@ -37,8 +55,10 @@ contract Token is Registry, Initializable
         ICompetition(target).increaseStake(msg.sender, amountToken);
         transfer(target, amountToken);
 
-        require((senderBal - balanceOf(msg.sender)) == amountToken, "Token - increaseStake: Sender final balance incorrect.");
-        require((ICompetition(target).getStake(msg.sender) - senderStake) == amountToken, "Token - increaseStake: Sender final stake incorrect.");
+        require((senderBal - balanceOf(msg.sender)) == amountToken,
+            "Token - increaseStake: Sender final balance incorrect.");
+        require((ICompetition(target).getStake(msg.sender) - senderStake) == amountToken,
+            "Token - increaseStake: Sender final stake incorrect.");
 
         success = true;
     }
@@ -53,8 +73,10 @@ contract Token is Registry, Initializable
 
         ICompetition(target).decreaseStake(msg.sender, amountToken);
 
-        require((balanceOf(msg.sender) - senderBal) == amountToken, "Token - decreaseStake: Sender final balance incorrect.");
-        require(senderStake - (ICompetition(target).getStake(msg.sender)) == amountToken, "Token - decreaseStake: Sender final stake incorrect.");
+        require((balanceOf(msg.sender) - senderBal) == amountToken,
+            "Token - decreaseStake: Sender final balance incorrect.");
+        require(senderStake - (ICompetition(target).getStake(msg.sender)) == amountToken,
+            "Token - decreaseStake: Sender final stake incorrect.");
 
         success = true;
     }
@@ -71,23 +93,6 @@ contract Token is Registry, Initializable
             decreaseStake(target, currentStake - amountToken);
         }
         success = true;
-    }
-
-    function stakeAndSubmit(address target, uint256 amountToken, bytes32 hash)
-    external
-    returns (bool success)
-    {
-        ICompetition(target).submit(msg.sender, hash);
-        require(setStake(target, amountToken), "Set stake unsuccessful."); // competition authorization checked via setStake callby
-        success = true;
-    }
-
-    function getStake(address target, address staker)
-    external view
-    returns (uint256 stake)
-    {
-        require(getCompetitionActiveByAddress(target), "Competition inactive.");
-        stake = ICompetition(target).getStake(staker);
     }
 
     function decimals() public view override returns (uint8) {

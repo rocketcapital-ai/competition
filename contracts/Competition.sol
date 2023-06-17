@@ -14,10 +14,12 @@ import './UniqueMappings.sol';
  * @title RCI Tournament(Competition) Contract
  * @author Rocket Capital Investment Pte Ltd
  * @dev This contract manages registration and reward payouts for the RCI Tournament.
- * @dev IPFS hash format: Hash Identifier (2 bytes), Actual Hash (May eventually take on other formats but currently 32 bytes)
- *
+ * @dev IPFS hash format: Hash Identifier (2 bytes), Actual Hash (May eventually take on other formats but
+ currently 32 bytes)
  */
-contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Initializable, ICompetitionV2, UniqueMappings {
+contract Competition is AccessControlRci, ICompetition, CompetitionStorage,
+Initializable, ICompetitionV2, UniqueMappings
+{
 
     function initialize(uint256 stakeThreshold_, uint256 rewardsThreshold_, address tokenAddress_)
     external
@@ -104,30 +106,9 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         }
     }
 
-    function _updateSubmission(address staker, bytes32 newSubmissionHash)
-    private
-    returns (uint32 challengeNumber)
-    {
-        challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase == 1, "WGPH");
-        _challenges[challengeNumber].submitterInfo[staker].submission = newSubmissionHash;
-
-        emit SubmissionUpdated(challengeNumber, staker, newSubmissionHash);
-    }
-
     /**
     ADMIN WRITE METHODS
     **/
-    function updateVault(address vault)
-    external override onlyRole(RCI_CHILD_ADMIN)
-    returns (bool success)
-    {
-        _vault = vault;
-        success = true;
-
-        emit VaultUpdated(vault);
-    }
-
     function updateMessage(string calldata newMessage)
     external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
@@ -143,14 +124,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
     returns (bool success)
     {
         success = _updateDeadlines(challengeNumber, index, timestamp);
-    }
-
-    function _updateDeadlines(uint32 challengeNumber, uint256 index, uint256 timestamp)
-    private
-    returns (bool success)
-    {
-        _challenges[challengeNumber].deadlines[index] = timestamp;
-        success = true;
     }
 
     function updateRewardsThreshold(uint256 newThreshold)
@@ -183,7 +156,9 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         emit PrivateKeyUpdated(newKeyHash);
     }
 
-    function openChallenge(bytes32 datasetHash, bytes32 keyHash, uint256 submissionCloseDeadline, uint256 nextChallengeDeadline)
+    function openChallenge(
+        bytes32 datasetHash, bytes32 keyHash,
+        uint256 submissionCloseDeadline, uint256 nextChallengeDeadline)
     external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
@@ -223,36 +198,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         success = _updateKey(challengeNumber, newKeyHash);
     }
 
-    function _updateDataset(uint32 challengeNumber, bytes32 newDatasetHash)
-    private
-    returns (bool success)
-    {
-        bytes32 oldDatasetHash = _challenges[challengeNumber].dataset;
-        require(_challenges[challengeNumber].phase == 1, "WGPH");
-        require(oldDatasetHash != newDatasetHash, "HHST");
-        require(!_datasetHashes[newDatasetHash], "DTST");
-        _challenges[challengeNumber].dataset = newDatasetHash;
-        _datasetHashes[newDatasetHash] = true;
-        success = true;
-
-        emit DatasetUpdated(challengeNumber, oldDatasetHash, newDatasetHash);
-    }
-
-    function _updateKey(uint32 challengeNumber, bytes32 newKeyHash)
-    private
-    returns (bool success)
-    {
-        bytes32 oldKeyHash = _challenges[challengeNumber].key;
-        require(_challenges[challengeNumber].phase == 1, "WGPH");
-        require(oldKeyHash != newKeyHash, "HHST");
-        require(!_publicKeyHashes[newKeyHash], "PBKY");
-        _challenges[challengeNumber].key = newKeyHash;
-        _publicKeyHashes[newKeyHash] = true;
-        success = true;
-
-        emit KeyUpdated(challengeNumber, oldKeyHash, newKeyHash);
-    }
-
     function closeSubmission()
     external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
@@ -281,19 +226,6 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         success = _updateResults(oldResultsHash, newResultsHash);
     }
 
-    function _updateResults(bytes32 oldResultsHash, bytes32 newResultsHash)
-    private
-    returns (bool success)
-    {
-        require(oldResultsHash != newResultsHash, "HHST");
-        uint32 challengeNumber = _challengeCounter;
-        require(_challenges[challengeNumber].phase >= 3, "WGPH");
-        require(_challenges[challengeNumber].results == oldResultsHash, "HHER");
-        _challenges[challengeNumber].results = newResultsHash;
-        success = true;
-
-        emit ResultsUpdated(challengeNumber, oldResultsHash, newResultsHash);
-    }
 
     function payRewards(address[] calldata submitters, uint256[] calldata stakingRewards,
                         uint256[] calldata challengeRewards, uint256[] calldata tournamentRewards)
@@ -303,110 +235,8 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         success = _payRewards(_challengeCounter, submitters, stakingRewards, challengeRewards, tournamentRewards);
     }
 
-    function burn(address[] calldata submitters, uint256[] calldata burnAmounts)
-    external override onlyRole(RCI_CHILD_ADMIN)
-    returns (bool success)
-    {
-        success = _burn(_challengeCounter, submitters, burnAmounts);
-    }
-
-    function _payRewards(uint32 challengeNumber, address[] calldata submitters, uint256[] calldata stakingRewards,
-                            uint256[] calldata challengeRewards, uint256[] calldata tournamentRewards)
-    private
-    returns (bool success)
-    {
-        require(_challenges[challengeNumber].phase == 3, "WGPH");
-        require((submitters.length == stakingRewards.length) &&
-            (submitters.length == challengeRewards.length) &&
-            (submitters.length == tournamentRewards.length),
-            "ARER");
-
-        uint256 totalStakingAmount;
-        uint256 totalChallengeAmount;
-        uint256 totalTournamentAmount;
-
-        for (uint i = 0; i < submitters.length; i++)
-        {
-            // read directly from the list since the list is already in memory(calldata), and to avoid stack too deep errors.
-            totalStakingAmount += stakingRewards[i];
-            totalChallengeAmount += challengeRewards[i];
-            totalTournamentAmount += tournamentRewards[i];
-
-            _paySingleAddress(challengeNumber, submitters[i], stakingRewards[i], challengeRewards[i], tournamentRewards[i]);
-        }
-
-        _competitionPool -= totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
-        _currentTotalStaked += totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
-        challengePayments[challengeNumber] += totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
-        success = true;
-
-        _logRewardsPaid(challengeNumber, totalStakingAmount, totalChallengeAmount, totalTournamentAmount);
-    }
-
-    function _burn(uint32 challengeNumber, address[] calldata submitters, uint256[] calldata burnAmounts)
-    private
-    returns (bool success)
-    {
-        require(_challenges[challengeNumber].phase == 3, "WGPH");
-        require((submitters.length == burnAmounts.length), "WGSL");
-
-        uint256 totalBurnAmount;
-
-        for (uint i = 0; i < submitters.length; i++)
-        {
-            // read directly from the list since the list is already in memory(calldata), and to avoid stack too deep errors.
-            totalBurnAmount += burnAmounts[i];
-            _burnSingleAddress(challengeNumber, submitters[i], burnAmounts[i]);
-        }
-
-        // allow for reverting on underflow
-        _burnedAmount += totalBurnAmount;
-        _currentTotalStaked -= totalBurnAmount;
-        challengeBurns[challengeNumber] += totalBurnAmount;
-        success = true;
-    }
-
-    function _paySingleAddress(uint32 challengeNumber, address submitter, uint256 stakingReward,
-                                uint256 challengeReward, uint256 tournamentReward)
-    private
-    {
-        _stakes[submitter] += stakingReward + challengeReward + tournamentReward;
-
-        if (stakingReward > 0){
-            _challenges[challengeNumber].submitterInfo[submitter].stakingRewards += stakingReward;
-        }
-
-        if (challengeReward > 0){
-            _challenges[challengeNumber].submitterInfo[submitter].challengeRewards += challengeReward;
-        }
-
-        if (tournamentReward > 0){
-            _challenges[challengeNumber].submitterInfo[submitter].tournamentRewards += tournamentReward;
-        }
-
-        emit RewardsPayment(challengeNumber, submitter, stakingReward, challengeReward, tournamentReward);
-    }
-
-
-    function _burnSingleAddress(uint32 challengeNumber, address submitter, uint256 burnAmount)
-    private
-    {
-        _stakes[submitter] -= burnAmount;
-        uint256 alreadyBurned = _challenges[challengeNumber].submitterInfo[submitter].tokensBurned;
-        if (burnAmount > 0){
-            _challenges[challengeNumber].submitterInfo[submitter].tokensBurned = burnAmount + alreadyBurned;
-        }
-
-        emit Burned(challengeNumber, submitter, burnAmount);
-    }
-
-    function _logRewardsPaid(uint32 challengeNumber, uint256 totalStakingAmount, uint256 totalChallengeAmount, uint256 totalTournamentAmount)
-    private
-    {
-        emit TotalRewardsPaid(challengeNumber, totalStakingAmount, totalChallengeAmount, totalTournamentAmount);
-    }
-
-    function updateChallengeAndTournamentScores(uint32 challengeNumber, address[] calldata participants, uint256[] calldata challengeScores, uint256[] calldata tournamentScores)
+    function updateChallengeAndTournamentScores(uint32 challengeNumber, address[] calldata participants,
+        uint256[] calldata challengeScores, uint256[] calldata tournamentScores)
     external override onlyRole(RCI_CHILD_ADMIN)
     returns (bool success)
     {
@@ -416,7 +246,8 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
 
         for (uint i = 0; i < participants.length; i++)
         {
-        // read directly from the list since the list is already in memory(calldata), and to avoid stack too deep errors.
+        // read directly from the list since the list is already in memory(calldata)
+        // and to avoid stack too deep errors.
 
             _challenges[challengeNumber].submitterInfo[participants[i]].challengeScores = challengeScores[i];
             _challenges[challengeNumber].submitterInfo[participants[i]].tournamentScores = tournamentScores[i];
@@ -540,291 +371,21 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         success = true;
     }
 
-    /**
-    READ METHODS
-    **/
-
-    function getCompetitionPool()
-    view external override
-    returns (uint256 competitionPool)
+    function updateVault(address vault)
+    external override onlyRole(RCI_CHILD_ADMIN)
+    returns (bool success)
     {
-        competitionPool = _competitionPool;
+        _vault = vault;
+        success = true;
+
+        emit VaultUpdated(vault);
     }
 
-    function getRewardsThreshold()
-    view external override
-    returns (uint256 rewardsThreshold)
+    function burn(address[] calldata submitters, uint256[] calldata burnAmounts)
+    external override onlyRole(RCI_CHILD_ADMIN)
+    returns (bool success)
     {
-        rewardsThreshold = _rewardsThreshold;
-    }
-
-    function getCurrentTotalStaked()
-    view external override
-    returns (uint256 currentTotalStaked)
-    {
-        currentTotalStaked = _currentTotalStaked;
-    }
-
-    function getLatestChallengeNumber()
-    view external override
-    returns (uint32 latestChallengeNumber)
-    {
-        latestChallengeNumber = _challengeCounter;
-    }
-
-    function getDatasetHash(uint32 challengeNumber)
-    view external override
-    returns (bytes32 dataset)
-    {
-        dataset = _challenges[challengeNumber].dataset;
-    }
-
-    function getResultsHash(uint32 challengeNumber)
-    view external override
-    returns (bytes32 results)
-    {
-        results = _challenges[challengeNumber].results;
-    }
-
-    function getKeyHash(uint32 challengeNumber)
-    view external override
-    returns (bytes32 key)
-    {
-        key = _challenges[challengeNumber].key;
-    }
-
-    function getPrivateKeyHash(uint32 challengeNumber)
-    view external override
-    returns (bytes32 privateKey)
-    {
-        privateKey = _challenges[challengeNumber].privateKey;
-    }
-
-    function getSubmissionCounter(uint32 challengeNumber)
-    view public override
-    returns (uint256 submissionCounter)
-    {
-        submissionCounter = EnumerableSet.length(_challenges[challengeNumber].submitters);
-    }
-
-    function getSubmitters(uint32 challengeNumber, uint256 startIndex, uint256 endIndex)
-    view public override
-    returns (address[] memory)
-    {
-        EnumerableSet.AddressSet storage submittersSet = _challenges[challengeNumber].submitters;
-        return _getListFromSet(submittersSet, startIndex, endIndex);
-    }
-
-    function getAllSubmitters(uint32 challengeNumber)
-    view external override
-    returns (address[] memory)
-    {
-        return getSubmitters(challengeNumber, 0, getSubmissionCounter(challengeNumber));
-    }
-
-    function getPhase(uint32 challengeNumber)
-    view external override
-    returns (uint8 phase)
-    {
-        phase = _challenges[challengeNumber].phase;
-    }
-
-    function getStakeThreshold()
-    view external override
-    returns (uint256 stakeThreshold)
-    {
-        stakeThreshold = _stakeThreshold;
-    }
-
-    function getStake(address participant)
-    view external override
-    returns (uint256 stake)
-    {
-        stake = _stakes[participant];
-    }
-
-    function getTokenAddress()
-    view external override
-    returns (address tokenAddress)
-    {
-        tokenAddress = address(_token);
-    }
-
-    function getSubmission(uint32 challengeNumber, address participant)
-    view external override
-    returns (bytes32 submissionHash)
-    {
-        submissionHash = _challenges[challengeNumber].submitterInfo[participant].submission;
-    }
-
-    function getStakedAmountForChallenge(uint32 challengeNumber, address participant)
-    view external override
-    returns (uint256 staked)
-    {
-        staked = _historicalStakeAmounts[challengeNumber][participant];
-    }
-
-    function getStakingRewards(uint32 challengeNumber, address participant)
-    view external override
-    returns (uint256 stakingRewards)
-    {
-        stakingRewards = _challenges[challengeNumber].submitterInfo[participant].stakingRewards;
-    }
-
-    function getChallengeRewards(uint32 challengeNumber, address participant)
-    view external override
-    returns (uint256 challengeRewards)
-    {
-        challengeRewards = _challenges[challengeNumber].submitterInfo[participant].challengeRewards;
-    }
-
-    function getTournamentRewards(uint32 challengeNumber, address participant)
-    view external override
-    returns (uint256 tournamentRewards)
-    {
-        tournamentRewards = _challenges[challengeNumber].submitterInfo[participant].tournamentRewards;
-    }
-
-    function getChallengeScores(uint32 challengeNumber, address participant)
-    view external override
-    returns (uint256 challengeScores)
-    {
-        challengeScores = _challenges[challengeNumber].submitterInfo[participant].challengeScores;
-    }
-
-    function getTournamentScores(uint32 challengeNumber, address participant)
-    view external override
-    returns (uint256 tournamentScores)
-    {
-        tournamentScores = _challenges[challengeNumber].submitterInfo[participant].tournamentScores;
-    }
-
-    function getInformation(uint32 challengeNumber, address participant, uint256 itemNumber)
-    view external override
-    returns (uint value)
-    {
-        value = _challenges[challengeNumber].submitterInfo[participant].info[itemNumber];
-    }
-
-    function getDeadlines(uint32 challengeNumber, uint256 index)
-    view external override
-    returns (uint256 deadline)
-    {
-        deadline = _challenges[challengeNumber].deadlines[index];
-    }
-
-    function getRemainder()
-    view public override
-    returns (uint256 remainder)
-    {
-        remainder = _token.balanceOf(address(this)) - _currentTotalStaked - _competitionPool - _burnedAmount;
-    }
-
-    function getMessage()
-    view external override
-    returns (string memory message)
-    {
-        message = _message;
-    }
-
-    function _getListFromSet(EnumerableSet.AddressSet storage setOfData, uint256 startIndex, uint256 endIndex)
-    view internal
-    returns (address[] memory)
-    {
-        address[] memory listOfData = new address[](endIndex - startIndex);
-        for (uint i = startIndex; i < endIndex; i++){
-            listOfData[i - startIndex] = (EnumerableSet.at(setOfData, i));
-        }
-        return listOfData;
-    }
-
-    function getHistoricalStakersCounter(uint32 challengeNumber)
-    view public override
-    returns (uint256 stakersCounter)
-    {
-        stakersCounter = EnumerableSet.length(_historicalStakerSet[challengeNumber]);
-    }
-
-    function getHistoricalStakersPartial(uint32 challengeNumber, uint256 startIndex, uint256 endIndex)
-    view public override
-    returns (address[] memory)
-    {
-        return _getListFromSet(_historicalStakerSet[challengeNumber], startIndex, endIndex);
-    }
-
-    function getHistoricalStakers(uint32 challengeNumber)
-    view external override
-    returns (address[] memory)
-    {
-        return getHistoricalStakersPartial(challengeNumber, 0, getHistoricalStakersCounter(challengeNumber));
-    }
-
-    function getHistoricalStakeAmounts(uint32 challengeNumber, address[] calldata stakers)
-    view external override
-    returns (uint256[] memory)
-    {
-        uint256[] memory stakeAmountList = new uint256[](stakers.length);
-        for (uint i = 0; i < stakers.length; i++){
-            stakeAmountList[i] = _historicalStakeAmounts[challengeNumber][stakers[i]];
-        }
-        return stakeAmountList;
-    }
-
-    function getStakersCounter()
-    view public override
-    returns (uint256 stakersCounter)
-    {
-        stakersCounter = EnumerableSet.length(stakerSet);
-    }
-
-    function getStakers(uint256 startIndex, uint256 endIndex)
-    view public override
-    returns (address[] memory)
-    {
-        return _getListFromSet(stakerSet, startIndex, endIndex);
-    }
-
-    function getAllStakers()
-    view external override
-    returns (address[] memory)
-    {
-        return getStakers(0, getStakersCounter());
-    }
-
-
-    function getBurnRecipient()
-    view external override
-    returns (address burnRecipient)
-    {
-        burnRecipient = _burnRecipient;
-    }
-
-    function getTotalBurnedAmount()
-    view external override
-    returns (uint256 burnedAmount)
-    {
-        burnedAmount = _burnedAmount;
-    }
-
-    function getBurnedAmount(uint32 challengeNumber, address participant)
-    view external override
-    returns (uint256 burnedAmount)
-    {
-        burnedAmount = _challenges[challengeNumber].submitterInfo[participant].tokensBurned;
-    }
-
-    function getHistoricalTotalStaked(uint32 challengeNumber)
-    view external override
-    returns (uint256 historicalTotalStakedAmt)
-    {
-        historicalTotalStakedAmt = _historicalTotalStake[challengeNumber];
-    }
-
-    function getVault()
-    view external override
-    returns (address vaultAddress)
-    {
-        vaultAddress = _vault;
+        success = _burn(_challengeCounter, submitters, burnAmounts);
     }
 
     /**
@@ -840,5 +401,457 @@ contract Competition is AccessControlRci, ICompetition, CompetitionStorage, Init
         success = _token.transferFrom(msg.sender, address(this), amountToken);
 
         emit Sponsor(msg.sender, amountToken, currentCompPoolAmt + amountToken);
+    }
+
+    /**
+    READ METHODS
+    **/
+
+    function getCompetitionPool()
+    external view override
+    returns (uint256 competitionPool)
+    {
+        competitionPool = _competitionPool;
+    }
+
+    function getRewardsThreshold()
+    external view override
+    returns (uint256 rewardsThreshold)
+    {
+        rewardsThreshold = _rewardsThreshold;
+    }
+
+    function getCurrentTotalStaked()
+    external view override
+    returns (uint256 currentTotalStaked)
+    {
+        currentTotalStaked = _currentTotalStaked;
+    }
+
+    function getLatestChallengeNumber()
+    external view override
+    returns (uint32 latestChallengeNumber)
+    {
+        latestChallengeNumber = _challengeCounter;
+    }
+
+    function getDatasetHash(uint32 challengeNumber)
+    external view override
+    returns (bytes32 dataset)
+    {
+        dataset = _challenges[challengeNumber].dataset;
+    }
+
+    function getResultsHash(uint32 challengeNumber)
+    external view override
+    returns (bytes32 results)
+    {
+        results = _challenges[challengeNumber].results;
+    }
+
+    function getKeyHash(uint32 challengeNumber)
+    external view override
+    returns (bytes32 key)
+    {
+        key = _challenges[challengeNumber].key;
+    }
+
+    function getPrivateKeyHash(uint32 challengeNumber)
+    external view override
+    returns (bytes32 privateKey)
+    {
+        privateKey = _challenges[challengeNumber].privateKey;
+    }
+
+    function getPhase(uint32 challengeNumber)
+    external view override
+    returns (uint8 phase)
+    {
+        phase = _challenges[challengeNumber].phase;
+    }
+
+    function getStakeThreshold()
+    external view override
+    returns (uint256 stakeThreshold)
+    {
+        stakeThreshold = _stakeThreshold;
+    }
+
+    function getStake(address participant)
+    external view override
+    returns (uint256 stake)
+    {
+        stake = _stakes[participant];
+    }
+
+    function getTokenAddress()
+    external view override
+    returns (address tokenAddress)
+    {
+        tokenAddress = address(_token);
+    }
+
+    function getSubmission(uint32 challengeNumber, address participant)
+    external view override
+    returns (bytes32 submissionHash)
+    {
+        submissionHash = _challenges[challengeNumber].submitterInfo[participant].submission;
+    }
+
+    function getStakedAmountForChallenge(uint32 challengeNumber, address participant)
+    external view override
+    returns (uint256 staked)
+    {
+        staked = _historicalStakeAmounts[challengeNumber][participant];
+    }
+
+    function getStakingRewards(uint32 challengeNumber, address participant)
+    external view override
+    returns (uint256 stakingRewards)
+    {
+        stakingRewards = _challenges[challengeNumber].submitterInfo[participant].stakingRewards;
+    }
+
+    function getChallengeRewards(uint32 challengeNumber, address participant)
+    external view override
+    returns (uint256 challengeRewards)
+    {
+        challengeRewards = _challenges[challengeNumber].submitterInfo[participant].challengeRewards;
+    }
+
+    function getTournamentRewards(uint32 challengeNumber, address participant)
+    external view override
+    returns (uint256 tournamentRewards)
+    {
+        tournamentRewards = _challenges[challengeNumber].submitterInfo[participant].tournamentRewards;
+    }
+
+    function getChallengeScores(uint32 challengeNumber, address participant)
+    external view override
+    returns (uint256 challengeScores)
+    {
+        challengeScores = _challenges[challengeNumber].submitterInfo[participant].challengeScores;
+    }
+
+    function getTournamentScores(uint32 challengeNumber, address participant)
+    external view override
+    returns (uint256 tournamentScores)
+    {
+        tournamentScores = _challenges[challengeNumber].submitterInfo[participant].tournamentScores;
+    }
+
+    function getInformation(uint32 challengeNumber, address participant, uint256 itemNumber)
+    external view override
+    returns (uint value)
+    {
+        value = _challenges[challengeNumber].submitterInfo[participant].info[itemNumber];
+    }
+
+    function getDeadlines(uint32 challengeNumber, uint256 index)
+    external view override
+    returns (uint256 deadline)
+    {
+        deadline = _challenges[challengeNumber].deadlines[index];
+    }
+
+    function getMessage()
+    external view override
+    returns (string memory message)
+    {
+        message = _message;
+    }
+
+    function getAllSubmitters(uint32 challengeNumber)
+    external view override
+    returns (address[] memory)
+    {
+        return getSubmitters(challengeNumber, 0, getSubmissionCounter(challengeNumber));
+    }
+
+    function getHistoricalStakers(uint32 challengeNumber)
+    external view override
+    returns (address[] memory)
+    {
+        return getHistoricalStakersPartial(challengeNumber, 0, getHistoricalStakersCounter(challengeNumber));
+    }
+
+    function getHistoricalStakeAmounts(uint32 challengeNumber, address[] calldata stakers)
+    external view override
+    returns (uint256[] memory)
+    {
+        uint256[] memory stakeAmountList = new uint256[](stakers.length);
+        for (uint i = 0; i < stakers.length; i++){
+            stakeAmountList[i] = _historicalStakeAmounts[challengeNumber][stakers[i]];
+        }
+        return stakeAmountList;
+    }
+
+    function getAllStakers()
+    external view override
+    returns (address[] memory)
+    {
+        return getStakers(0, getStakersCounter());
+    }
+
+    function getBurnRecipient()
+    external view override
+    returns (address burnRecipient)
+    {
+        burnRecipient = _burnRecipient;
+    }
+
+    function getTotalBurnedAmount()
+    external view override
+    returns (uint256 burnedAmount)
+    {
+        burnedAmount = _burnedAmount;
+    }
+
+    function getBurnedAmount(uint32 challengeNumber, address participant)
+    external view override
+    returns (uint256 burnedAmount)
+    {
+        burnedAmount = _challenges[challengeNumber].submitterInfo[participant].tokensBurned;
+    }
+
+    function getHistoricalTotalStaked(uint32 challengeNumber)
+    external view override
+    returns (uint256 historicalTotalStakedAmt)
+    {
+        historicalTotalStakedAmt = _historicalTotalStake[challengeNumber];
+    }
+
+    function getVault()
+    external view override
+    returns (address vaultAddress)
+    {
+        vaultAddress = _vault;
+    }
+
+    function getSubmissionCounter(uint32 challengeNumber)
+    public view override
+    returns (uint256 submissionCounter)
+    {
+        submissionCounter = EnumerableSet.length(_challenges[challengeNumber].submitters);
+    }
+
+    function getSubmitters(uint32 challengeNumber, uint256 startIndex, uint256 endIndex)
+    public view override
+    returns (address[] memory)
+    {
+        EnumerableSet.AddressSet storage submittersSet = _challenges[challengeNumber].submitters;
+        return _getListFromSet(submittersSet, startIndex, endIndex);
+    }
+
+    function getRemainder()
+    public view override
+    returns (uint256 remainder)
+    {
+        remainder = _token.balanceOf(address(this)) - _currentTotalStaked - _competitionPool - _burnedAmount;
+    }
+
+    function getStakersCounter()
+    public view override
+    returns (uint256 stakersCounter)
+    {
+        stakersCounter = EnumerableSet.length(stakerSet);
+    }
+
+    function getStakers(uint256 startIndex, uint256 endIndex)
+    public view override
+    returns (address[] memory)
+    {
+        return _getListFromSet(stakerSet, startIndex, endIndex);
+    }
+
+    function getHistoricalStakersCounter(uint32 challengeNumber)
+    public view override
+    returns (uint256 stakersCounter)
+    {
+        stakersCounter = EnumerableSet.length(_historicalStakerSet[challengeNumber]);
+    }
+
+    function getHistoricalStakersPartial(uint32 challengeNumber, uint256 startIndex, uint256 endIndex)
+    public view override
+    returns (address[] memory)
+    {
+        return _getListFromSet(_historicalStakerSet[challengeNumber], startIndex, endIndex);
+    }
+
+    function _getListFromSet(EnumerableSet.AddressSet storage setOfData, uint256 startIndex, uint256 endIndex)
+    internal view
+    returns (address[] memory)
+    {
+        address[] memory listOfData = new address[](endIndex - startIndex);
+        for (uint i = startIndex; i < endIndex; i++){
+            listOfData[i - startIndex] = (EnumerableSet.at(setOfData, i));
+        }
+        return listOfData;
+    }
+
+    /**
+    Private Methods
+    **/
+
+    function _updateSubmission(address staker, bytes32 newSubmissionHash)
+    private
+    returns (uint32 challengeNumber)
+    {
+        challengeNumber = _challengeCounter;
+        require(_challenges[challengeNumber].phase == 1, "WGPH");
+        _challenges[challengeNumber].submitterInfo[staker].submission = newSubmissionHash;
+
+        emit SubmissionUpdated(challengeNumber, staker, newSubmissionHash);
+    }
+
+    function _updateDeadlines(uint32 challengeNumber, uint256 index, uint256 timestamp)
+    private
+    returns (bool success)
+    {
+        _challenges[challengeNumber].deadlines[index] = timestamp;
+        success = true;
+    }
+
+    function _updateDataset(uint32 challengeNumber, bytes32 newDatasetHash)
+    private
+    returns (bool success)
+    {
+        bytes32 oldDatasetHash = _challenges[challengeNumber].dataset;
+        require(_challenges[challengeNumber].phase == 1, "WGPH");
+        require(oldDatasetHash != newDatasetHash, "HHST");
+        require(!_datasetHashes[newDatasetHash], "DTST");
+        _challenges[challengeNumber].dataset = newDatasetHash;
+        _datasetHashes[newDatasetHash] = true;
+        success = true;
+
+        emit DatasetUpdated(challengeNumber, oldDatasetHash, newDatasetHash);
+    }
+
+    function _updateKey(uint32 challengeNumber, bytes32 newKeyHash)
+    private
+    returns (bool success)
+    {
+        bytes32 oldKeyHash = _challenges[challengeNumber].key;
+        require(_challenges[challengeNumber].phase == 1, "WGPH");
+        require(oldKeyHash != newKeyHash, "HHST");
+        require(!_publicKeyHashes[newKeyHash], "PBKY");
+        _challenges[challengeNumber].key = newKeyHash;
+        _publicKeyHashes[newKeyHash] = true;
+        success = true;
+
+        emit KeyUpdated(challengeNumber, oldKeyHash, newKeyHash);
+    }
+
+    function _updateResults(bytes32 oldResultsHash, bytes32 newResultsHash)
+    private
+    returns (bool success)
+    {
+        require(oldResultsHash != newResultsHash, "HHST");
+        uint32 challengeNumber = _challengeCounter;
+        require(_challenges[challengeNumber].phase >= 3, "WGPH");
+        require(_challenges[challengeNumber].results == oldResultsHash, "HHER");
+        _challenges[challengeNumber].results = newResultsHash;
+        success = true;
+
+        emit ResultsUpdated(challengeNumber, oldResultsHash, newResultsHash);
+    }
+
+    function _payRewards(uint32 challengeNumber, address[] calldata submitters, uint256[] calldata stakingRewards,
+                            uint256[] calldata challengeRewards, uint256[] calldata tournamentRewards)
+    private
+    returns (bool success)
+    {
+        require(_challenges[challengeNumber].phase == 3, "WGPH");
+        require((submitters.length == stakingRewards.length) &&
+            (submitters.length == challengeRewards.length) &&
+            (submitters.length == tournamentRewards.length),
+            "ARER");
+
+        uint256 totalStakingAmount;
+        uint256 totalChallengeAmount;
+        uint256 totalTournamentAmount;
+
+        for (uint i = 0; i < submitters.length; i++)
+        {
+            // read directly from the list since the list is already in memory(calldata)
+            // and to avoid stack too deep errors.
+            totalStakingAmount += stakingRewards[i];
+            totalChallengeAmount += challengeRewards[i];
+            totalTournamentAmount += tournamentRewards[i];
+
+            _paySingleAddress(challengeNumber, submitters[i], stakingRewards[i],
+                challengeRewards[i], tournamentRewards[i]);
+        }
+
+        _competitionPool -= totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
+        _currentTotalStaked += totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
+        challengePayments[challengeNumber] += totalStakingAmount + totalChallengeAmount + totalTournamentAmount;
+        success = true;
+
+        _logRewardsPaid(challengeNumber, totalStakingAmount, totalChallengeAmount, totalTournamentAmount);
+    }
+
+    function _burn(uint32 challengeNumber, address[] calldata submitters, uint256[] calldata burnAmounts)
+    private
+    returns (bool success)
+    {
+        require(_challenges[challengeNumber].phase == 3, "WGPH");
+        require((submitters.length == burnAmounts.length), "WGSL");
+
+        uint256 totalBurnAmount;
+
+        for (uint i = 0; i < submitters.length; i++)
+        {
+            // read directly from the list since the list is already in memory(calldata)
+            // and to avoid stack too deep errors.
+            totalBurnAmount += burnAmounts[i];
+            _burnSingleAddress(challengeNumber, submitters[i], burnAmounts[i]);
+        }
+
+        // allow for reverting on underflow
+        _burnedAmount += totalBurnAmount;
+        _currentTotalStaked -= totalBurnAmount;
+        challengeBurns[challengeNumber] += totalBurnAmount;
+        success = true;
+    }
+
+    function _paySingleAddress(uint32 challengeNumber, address submitter, uint256 stakingReward,
+                                uint256 challengeReward, uint256 tournamentReward)
+    private
+    {
+        _stakes[submitter] += stakingReward + challengeReward + tournamentReward;
+
+        if (stakingReward > 0){
+            _challenges[challengeNumber].submitterInfo[submitter].stakingRewards += stakingReward;
+        }
+
+        if (challengeReward > 0){
+            _challenges[challengeNumber].submitterInfo[submitter].challengeRewards += challengeReward;
+        }
+
+        if (tournamentReward > 0){
+            _challenges[challengeNumber].submitterInfo[submitter].tournamentRewards += tournamentReward;
+        }
+
+        emit RewardsPayment(challengeNumber, submitter, stakingReward, challengeReward, tournamentReward);
+    }
+
+    function _burnSingleAddress(uint32 challengeNumber, address submitter, uint256 burnAmount)
+    private
+    {
+        _stakes[submitter] -= burnAmount;
+        uint256 alreadyBurned = _challenges[challengeNumber].submitterInfo[submitter].tokensBurned;
+        if (burnAmount > 0){
+            _challenges[challengeNumber].submitterInfo[submitter].tokensBurned = burnAmount + alreadyBurned;
+        }
+
+        emit Burned(challengeNumber, submitter, burnAmount);
+    }
+
+    function _logRewardsPaid(uint32 challengeNumber,
+        uint256 totalStakingAmount, uint256 totalChallengeAmount, uint256 totalTournamentAmount)
+    private
+    {
+        emit TotalRewardsPaid(challengeNumber, totalStakingAmount, totalChallengeAmount, totalTournamentAmount);
     }
 }

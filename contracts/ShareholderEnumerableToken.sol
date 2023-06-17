@@ -4,6 +4,8 @@ import "OpenZeppelin/openzeppelin-contracts@4.8.0/contracts/utils/structs/Enumer
 import "OpenZeppelin/openzeppelin-contracts@4.8.0/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
 
 abstract contract ShareholderEnumerableToken is ERC20PresetFixedSupply {
+    using EnumerableSet for EnumerableSet.AddressSet;
+
     // the following are slots for storage variables for use in TransparentUpgradeableProxy contracts that may
     // need additional variables for updated contracts inherited "in the middle".
     mapping (string => uint256) internal _storageUint;
@@ -11,7 +13,6 @@ abstract contract ShareholderEnumerableToken is ERC20PresetFixedSupply {
     mapping (string => bytes32) internal _storageBytes32;
     mapping (string => bool) internal _storageBool;
 
-    using EnumerableSet for EnumerableSet.AddressSet;
     EnumerableSet.AddressSet private shareHolders;
 
     constructor(
@@ -20,6 +21,13 @@ abstract contract ShareholderEnumerableToken is ERC20PresetFixedSupply {
         uint256 initialSupply_,
         address recipient_
     ) ERC20PresetFixedSupply(name_, symbol_, initialSupply_, recipient_) {}
+
+    function getShareHolders(uint256 startIndex, uint256 endIndex)
+    external view
+    returns (address[] memory shareHoldersList)
+    {
+        shareHoldersList = getListFromSet(shareHolders, startIndex, endIndex);
+    }
 
     function numberOfShareHolders()
     public view
@@ -37,14 +45,6 @@ abstract contract ShareholderEnumerableToken is ERC20PresetFixedSupply {
             shareHolders.remove(userAddress);
         }
     }
-
-    function getShareHolders(uint256 startIndex, uint256 endIndex)
-    external view
-    returns (address[] memory shareHoldersList)
-    {
-        shareHoldersList = getListFromSet(shareHolders, startIndex, endIndex);
-    }
-
 
     function getListFromSet(EnumerableSet.AddressSet storage setOfData, uint256 startIndex, uint256 endIndex)
     internal view

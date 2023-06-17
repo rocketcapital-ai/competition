@@ -7,13 +7,14 @@ import "./TransferFeeToken.sol";
 
 
 abstract contract Registry is IRegistry, TransferFeeToken{
+    using EnumerableSet for EnumerableSet.AddressSet;
+
     struct Ext{
         bool active;
         address extensionAddress;
         bytes32 informationLocation;
     }
 
-    using EnumerableSet for EnumerableSet.AddressSet;
     EnumerableSet.AddressSet private _authorizedCompetitions;
 
     mapping(string => address) private _competitionNameAddressMap; // for compatibility with legacy read methods.
@@ -46,7 +47,8 @@ abstract contract Registry is IRegistry, TransferFeeToken{
     {
         require(competitionAddress != address(0), "Cannot unauthorize 0 address.");
         require(_competitionNameAddressMap[competitionName] == competitionAddress, "No name with this address.");
-        require(stringCompare(_competitionAddressNameMap[competitionAddress], competitionName), "No address with this name.");
+        require(stringCompare(_competitionAddressNameMap[competitionAddress], competitionName),
+            "No address with this name.");
          _authorizedCompetitions.remove(competitionAddress);
         _competitionNameAddressMap[competitionName] = address(0);
         _competitionAddressNameMap[competitionAddress] = "";
@@ -60,7 +62,8 @@ abstract contract Registry is IRegistry, TransferFeeToken{
         require(extensionAddress != address(0), "Cannot register 0 address.");
         require(informationLocation != bytes32(0), "Cannot set information location to 0.");
         require(_extension[extensionName].extensionAddress == address(0), "Extension already exists.");
-        _extension[extensionName] = Ext({active:true, extensionAddress:extensionAddress, informationLocation:informationLocation});
+        _extension[extensionName] = Ext({active:true, extensionAddress:extensionAddress,
+            informationLocation:informationLocation});
         _extensionNames.push(extensionName);
 
         emit NewExtensionRegistered(extensionName, extensionAddress, informationLocation);
@@ -69,7 +72,8 @@ abstract contract Registry is IRegistry, TransferFeeToken{
     function toggleExtensionActive(string calldata extensionName)
     external override onlyRole(RCI_CHILD_ADMIN)
     {
-        require(_extension[extensionName].extensionAddress != address(0), "Extension does not exist. Use function 'registerNewExtension' instead.");
+        require(_extension[extensionName].extensionAddress != address(0),
+            "Extension does not exist. Use function 'registerNewExtension' instead.");
         _extension[extensionName].active = !_extension[extensionName].active;
 
         emit ExtensionActiveToggled(extensionName);
@@ -78,7 +82,8 @@ abstract contract Registry is IRegistry, TransferFeeToken{
     function changeExtensionInfoLocation(string calldata extensionName, bytes32 newLocation)
     external override onlyRole(RCI_CHILD_ADMIN)
     {
-        require(_extension[extensionName].extensionAddress != address(0), "Extension does not exist. Use function 'registerNewExtension' instead.");
+        require(_extension[extensionName].extensionAddress != address(0),
+            "Extension does not exist. Use function 'registerNewExtension' instead.");
         require(newLocation != bytes32(0), "Cannot set information location to 0.");
         _extension[extensionName].informationLocation = newLocation;
 
@@ -101,10 +106,11 @@ abstract contract Registry is IRegistry, TransferFeeToken{
     /* READ METHODS */
 
     function getCompetitionList()
-    view external override
+    external view override
     returns (string[] memory competitionNames)
     {
-        address[] memory competitionAddresses = getListFromSet(_authorizedCompetitions, 0, _authorizedCompetitions.length());
+        address[] memory competitionAddresses = getListFromSet(_authorizedCompetitions, 0,
+            _authorizedCompetitions.length());
         competitionNames = new string[](competitionAddresses.length);
         for (uint i = 0; i < competitionAddresses.length; i++){
             competitionNames[i] = _competitionAddressNameMap[competitionAddresses[i]];
@@ -112,57 +118,57 @@ abstract contract Registry is IRegistry, TransferFeeToken{
     }
 
     function getCompetitionActive(string calldata competitionName)
-    view external override
+    external view override
     returns (bool active)
     {
         address competitionAddress = _competitionNameAddressMap[competitionName];
         active = getCompetitionActiveByAddress(competitionAddress);
     }
 
-    function getCompetitionActiveByAddress(address competitionAddress)
-    view public override
-    returns (bool active)
-    {
-        active = _authorizedCompetitions.contains(competitionAddress);
-    }
-
     function getCompetitionAddress(string calldata competitionName)
-    view external override
+    external view override
     returns (address competitionAddress)
     {
         competitionAddress = _competitionNameAddressMap[competitionName];
     }
 
     function getExtensionList()
-    view external override
+    external view override
     returns (string[] memory extensionNames)
     {
         extensionNames = _extensionNames;
     }
 
     function getExtensionAddress(string calldata extensionName)
-    view external override
+    external view override
     returns (address extensionAddress)
     {
         extensionAddress = _extension[extensionName].extensionAddress;
     }
 
     function getExtensionActive(string calldata extensionName)
-    view external override
+    external view override
     returns (bool active)
     {
         active = _extension[extensionName].active;
     }
 
     function getExtensionInfoLocation(string calldata extensionName)
-    view external override
+    external view override
     returns (bytes32 informationLocation)
     {
         informationLocation = _extension[extensionName].informationLocation;
     }
 
+    function getCompetitionActiveByAddress(address competitionAddress)
+    public view override
+    returns (bool active)
+    {
+        active = _authorizedCompetitions.contains(competitionAddress);
+    }
+
     function stringCompare(string storage s1, string calldata s2)
-    view internal
+    internal view
     returns (bool same)
     {
         same = keccak256(abi.encodePacked(s1)) == keccak256(abi.encodePacked(s2));
@@ -170,7 +176,7 @@ abstract contract Registry is IRegistry, TransferFeeToken{
 
 
     function stringCompareNull(string storage s1)
-    view internal
+    internal view
     returns (bool same)
     {
         same = keccak256(abi.encodePacked(s1)) == keccak256(abi.encodePacked(""));

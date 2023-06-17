@@ -9,13 +9,14 @@ interface IShareTaxPolicy{
     @dev: along with the payer and collector addresses.
     */
 
-    function shareTaxActions(address from, address to, uint256 amount)
-    external view
-    returns (ShareTaxTransfers[] memory);
-
     struct ShareTaxTransfers {
         address payer;
         address collector;
         uint256 amount;
     }
+
+    function shareTaxActions(address from, address to, uint256 amount)
+    external view
+    returns (ShareTaxTransfers[] memory);
+
 }

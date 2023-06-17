@@ -8,18 +8,12 @@ import "OpenZeppelin/openzeppelin-contracts@4.8.0/contracts/utils/Address.sol";
 /// @dev Adapted from Multisignature wallet by Stefan George - <stefan.george@consensys.net>
 contract MultiSig {
 
-    /*
-     *  Events
-     */
-    event Confirmation(address indexed sender, uint256 indexed transactionId);
-    event Revocation(address indexed sender, uint256 indexed transactionId);
-    event Submission(uint256 indexed transactionId);
-    event Execution(uint256 indexed transactionId);
-    event ExecutionFailure(uint256 indexed transactionId);
-    event Deposit(address indexed sender, uint256 value);
-    event OwnerAddition(address indexed owner);
-    event OwnerRemoval(address indexed owner);
-    event RequirementChange(uint256 required);
+    struct Transaction {
+        address destination;
+        uint256 value;
+        bytes data;
+        bool executed;
+    }
 
     /*
      *  Constants
@@ -36,18 +30,25 @@ contract MultiSig {
     uint256 public required;
     uint256 public transactionCount;
 
-    struct Transaction {
-        address destination;
-        uint256 value;
-        bytes data;
-        bool executed;
-    }
+    /*
+     *  Events
+     */
+    event Confirmation(address indexed sender, uint256 indexed transactionId);
+    event Revocation(address indexed sender, uint256 indexed transactionId);
+    event Submission(uint256 indexed transactionId);
+    event Execution(uint256 indexed transactionId);
+    event ExecutionFailure(uint256 indexed transactionId);
+    event Deposit(address indexed sender, uint256 value);
+    event OwnerAddition(address indexed owner);
+    event OwnerRemoval(address indexed owner);
+    event RequirementChange(uint256 required);
 
     /*
      *  Modifiers
      */
     modifier onlyWallet() {
-        require(msg.sender == address(this), "MultiSig: Only this MultiSig contract is authorized to call this function.");
+        require(msg.sender == address(this),
+            "MultiSig: Only this MultiSig contract is authorized to call this function.");
         _;
     }
 
@@ -168,17 +169,6 @@ contract MultiSig {
         emit OwnerAddition(newOwner);
     }
 
-    /// @dev Allows to change the number of required confirmations. Transaction has to be sent by wallet.
-    /// @param _required Number of required confirmations.
-    function changeRequirement(uint256 _required)
-        public
-        onlyWallet
-        validRequirement(owners.length, _required)
-    {
-        required = _required;
-        emit RequirementChange(_required);
-    }
-
     /// @dev Allows an owner to submit and confirm a transaction.
     /// @param destination Transaction target address.
     /// @param value Transaction ether value.
@@ -190,19 +180,6 @@ contract MultiSig {
     {
         transactionId = addTransaction(destination, value, data);
         confirmTransaction(transactionId);
-    }
-
-    /// @dev Allows an owner to confirm a transaction.
-    /// @param transactionId Transaction ID.
-    function confirmTransaction(uint256 transactionId)
-        public
-        ownerExists(msg.sender)
-        transactionExists(transactionId)
-        notConfirmed(transactionId, msg.sender)
-    {
-        confirmations[transactionId][msg.sender] = true;
-        emit Confirmation(msg.sender, transactionId);
-        executeTransaction(transactionId);
     }
 
     /// @dev Allows an owner to revoke a confirmation for a transaction.
@@ -217,81 +194,6 @@ contract MultiSig {
         emit Revocation(msg.sender, transactionId);
     }
 
-    /// @dev Allows anyone to execute a confirmed transaction.
-    /// @param transactionId Transaction ID.
-    function executeTransaction(uint256 transactionId)
-        public
-        ownerExists(msg.sender)
-        confirmed(transactionId, msg.sender)
-        notExecuted(transactionId)
-    {
-        if (isConfirmed(transactionId)) {
-            Transaction storage txn = transactions[transactionId];
-            txn.executed = true;
-            if (external_call(txn.destination, txn.data, txn.value))
-                emit Execution(transactionId);
-            else {
-                emit ExecutionFailure(transactionId);
-                txn.executed = false;
-            }
-        }
-    }
-
-    // call has been separated into its own function in order to take advantage
-    // of the Solidity's code generator to produce a loop that copies tx.data into memory.
-    function external_call(address destination, bytes memory data, uint256 value)
-    internal returns (bool)
-    {
-        require(address(this).balance >= value, "Insufficient balance for call");
-        require(Address.isContract(destination), "Call to non-contract");
-
-        // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = destination.call{ value: value }(data);
-        return success;
-    }
-
-    /// @dev Returns the confirmation status of a transaction.
-    /// @param transactionId Transaction ID.
-    /// @return Confirmation status.
-    function isConfirmed(uint256 transactionId)
-    public view
-    returns (bool)
-    {
-        uint256 count = 0;
-        for (uint256 i=0; i<owners.length; i++) {
-            if (confirmations[transactionId][owners[i]]){
-                count += 1;
-            }
-            if (count == required){
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /*
-     * Internal functions
-     */
-    /// @dev Adds a new transaction to the transaction mapping, if transaction does not exist yet.
-    /// @param destination Transaction target address.
-    /// @param value Transaction ether value.
-    /// @param data Transaction data payload.
-    /// @return transactionId Returns transaction ID.
-    function addTransaction(address destination, uint256 value, bytes calldata data)
-        internal
-        notNull(destination)
-        returns (uint256 transactionId)
-    {
-        transactionId = transactionCount;
-        transactions[transactionId] = Transaction({
-            destination: destination,
-            value: value,
-            data: data,
-            executed: false
-        });
-        transactionCount += 1;
-        emit Submission(transactionId);
-    }
 
     /*
      * Web3 call functions
@@ -386,5 +288,105 @@ contract MultiSig {
         for (i=from; i<to; i++){
             _transactionIds[i - from] = transactionIdsTemp[i];
         }
+    }
+
+    /// @dev Allows to change the number of required confirmations. Transaction has to be sent by wallet.
+    /// @param _required Number of required confirmations.
+    function changeRequirement(uint256 _required)
+        public
+        onlyWallet
+        validRequirement(owners.length, _required)
+    {
+        required = _required;
+        emit RequirementChange(_required);
+    }
+
+    /// @dev Allows an owner to confirm a transaction.
+    /// @param transactionId Transaction ID.
+    function confirmTransaction(uint256 transactionId)
+        public
+        ownerExists(msg.sender)
+        transactionExists(transactionId)
+        notConfirmed(transactionId, msg.sender)
+    {
+        confirmations[transactionId][msg.sender] = true;
+        emit Confirmation(msg.sender, transactionId);
+        executeTransaction(transactionId);
+    }
+
+    /// @dev Allows anyone to execute a confirmed transaction.
+    /// @param transactionId Transaction ID.
+    function executeTransaction(uint256 transactionId)
+        public
+        ownerExists(msg.sender)
+        confirmed(transactionId, msg.sender)
+        notExecuted(transactionId)
+    {
+        if (isConfirmed(transactionId)) {
+            Transaction storage txn = transactions[transactionId];
+            txn.executed = true;
+            if (external_call(txn.destination, txn.data, txn.value))
+                emit Execution(transactionId);
+            else {
+                emit ExecutionFailure(transactionId);
+                txn.executed = false;
+            }
+        }
+    }
+
+    /// @dev Returns the confirmation status of a transaction.
+    /// @param transactionId Transaction ID.
+    /// @return Confirmation status.
+    function isConfirmed(uint256 transactionId)
+    public view
+    returns (bool)
+    {
+        uint256 count = 0;
+        for (uint256 i=0; i<owners.length; i++) {
+            if (confirmations[transactionId][owners[i]]){
+                count += 1;
+            }
+            if (count == required){
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /*
+     * Internal functions
+     */
+    // call has been separated into its own function in order to take advantage
+    // of the Solidity's code generator to produce a loop that copies tx.data into memory.
+    function external_call(address destination, bytes memory data, uint256 value)
+    internal returns (bool)
+    {
+        require(address(this).balance >= value, "Insufficient balance for call");
+        require(Address.isContract(destination), "Call to non-contract");
+
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool success, bytes memory returndata) = destination.call{ value: value }(data);
+        return success;
+    }
+
+    /// @dev Adds a new transaction to the transaction mapping, if transaction does not exist yet.
+    /// @param destination Transaction target address.
+    /// @param value Transaction ether value.
+    /// @param data Transaction data payload.
+    /// @return transactionId Returns transaction ID.
+    function addTransaction(address destination, uint256 value, bytes calldata data)
+        internal
+        notNull(destination)
+        returns (uint256 transactionId)
+    {
+        transactionId = transactionCount;
+        transactions[transactionId] = Transaction({
+            destination: destination,
+            value: value,
+            data: data,
+            executed: false
+        });
+        transactionCount += 1;
+        emit Submission(transactionId);
     }
 }

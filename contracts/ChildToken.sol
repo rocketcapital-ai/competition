@@ -22,26 +22,12 @@ contract ChildToken is Token  {
         _fxManager = fxManager_;
     }
 
-    function fxManager()
-    public view
-    returns (address)
-    {
-        return _fxManager;
-    }
-
     function setConnectedToken(address connectedToken_)
     external
     onlyRole(RCI_CHILD_ADMIN)
     {
         require(connectedToken_.isContract(), "Invalid address.");
         _connectedToken = connectedToken_;
-    }
-
-    function connectedToken()
-    public view
-    returns (address)
-    {
-        return _connectedToken;
     }
 
     function mint(address user, uint256 amount)
@@ -56,5 +42,19 @@ contract ChildToken is Token  {
     {
         require(msg.sender == _fxManager, "Invalid sender");
         _burn(user, amount);
+    }
+
+    function fxManager()
+    public view
+    returns (address)
+    {
+        return _fxManager;
+    }
+
+    function connectedToken()
+    public view
+    returns (address)
+    {
+        return _connectedToken;
     }
 }

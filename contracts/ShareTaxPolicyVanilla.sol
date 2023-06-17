@@ -54,20 +54,6 @@ contract ShareTaxPolicyVanilla is IShareTaxPolicy, AccessControlRci {
         return true;
     }
 
-    function computeFederalTax(uint256 amount)
-    public view
-    returns (uint256)
-    {
-        return federalTaxPercentage * amount / taxUnits;
-    }
-
-    function computeStateTax(uint256 amount)
-    public view
-    returns (uint256)
-    {
-        return stateTaxPercentage * amount / taxUnits;
-    }
-
     function shareTaxActions(address from, address to, uint256 amount)
     external view override
     returns (ShareTaxTransfers[] memory)
@@ -90,5 +76,19 @@ contract ShareTaxPolicyVanilla is IShareTaxPolicy, AccessControlRci {
         });
 
         return shareTaxTransfers;
+    }
+
+    function computeFederalTax(uint256 amount)
+    public view
+    returns (uint256)
+    {
+        return federalTaxPercentage * amount / taxUnits;
+    }
+
+    function computeStateTax(uint256 amount)
+    public view
+    returns (uint256)
+    {
+        return stateTaxPercentage * amount / taxUnits;
     }
 }
