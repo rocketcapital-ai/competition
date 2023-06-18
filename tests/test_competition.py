@@ -6,7 +6,7 @@ class TestCompetition:
     def setup(self):
         print('Setting up.')
         random.seed(7788)
-        self.num_rounds = 3
+        self.num_rounds = 5
         self.use_multi_admin = False
         self.admin = accounts[0]
         self.participants = accounts[1:]
@@ -735,26 +735,51 @@ class TestCompetition:
             challenge_scores.append(int(random.random() * 1e6))
             tournament_scores.append(int(random.random() * 1e6))
 
-            # should not be able to move to phase 4 at this point, when no payments have been made.
+            # should not be able to move to phase 4 at this point, when no payments or burns have been made.
             self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}],
                             self.use_multi_admin, exp_revert=True)
 
-            self.execute_fn(self.competition, self.competition.payRewards,
-                            [winners[:-1], staking_rewards, challenge_rewards, tournament_rewards, {'from': self.admin}],
-                            self.use_multi_admin, exp_revert=True)
-            self.execute_fn(self.competition, self.competition.payRewards,
-                            [winners, staking_rewards, challenge_rewards, tournament_rewards, {'from': self.admin}],
-                            self.use_multi_admin, exp_revert=False)
 
-            # should not be able to move to phase 4 at this point, when no burns have been made.
-            self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}],
-                            self.use_multi_admin, exp_revert=True)
+            burn_first = random.choice([True, False])
+            if burn_first:
+                self.execute_fn(self.competition, self.competition.burn,
+                                [winners[:-1], burn_amounts, {'from': self.admin}], self.use_multi_admin,
+                                exp_revert=True)
 
-            self.execute_fn(self.competition, self.competition.burn,
-                            [winners[:-1], burn_amounts, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
+                self.execute_fn(self.competition, self.competition.burn,
+                                [winners, burn_amounts, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
 
-            self.execute_fn(self.competition, self.competition.burn,
-                            [winners, burn_amounts, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
+                self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=False)
+                self.execute_fn(self.competition, self.competition.retreatToPhase, [3, {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=False)
+
+                self.execute_fn(self.competition, self.competition.payRewards,
+                                [winners[:-1], staking_rewards, challenge_rewards, tournament_rewards,
+                                 {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=True)
+                self.execute_fn(self.competition, self.competition.payRewards,
+                                [winners, staking_rewards, challenge_rewards, tournament_rewards, {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=False)
+
+            else:
+                self.execute_fn(self.competition, self.competition.payRewards,
+                                [winners[:-1], staking_rewards, challenge_rewards, tournament_rewards, {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=True)
+                self.execute_fn(self.competition, self.competition.payRewards,
+                                [winners, staking_rewards, challenge_rewards, tournament_rewards, {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=False)
+
+                self.execute_fn(self.competition, self.competition.advanceToPhase, [4, {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=False)
+                self.execute_fn(self.competition, self.competition.retreatToPhase, [3, {'from': self.admin}],
+                                self.use_multi_admin, exp_revert=False)
+
+                self.execute_fn(self.competition, self.competition.burn,
+                                [winners[:-1], burn_amounts, {'from': self.admin}], self.use_multi_admin, exp_revert=True)
+
+                self.execute_fn(self.competition, self.competition.burn,
+                                [winners, burn_amounts, {'from': self.admin}], self.use_multi_admin, exp_revert=False)
 
             # Test subsequent burn
             w = winners[0]

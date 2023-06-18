@@ -284,7 +284,7 @@ Initializable, ICompetitionV2, UniqueMappings
                     && ((phase-1) == _challenges[challengeNumber].phase),
             "WGPH" );
         if (phase == 4){
-            require((challengePayments[challengeNumber] > 0) && (challengeBurns[challengeNumber] > 0), "PYBN");
+            require((challengePayments[challengeNumber] > 0) || (challengeBurns[challengeNumber] > 0), "PYBN");
         }
         _challenges[challengeNumber].phase = phase;
 
